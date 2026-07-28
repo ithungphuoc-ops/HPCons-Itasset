@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { Shield, Plus, Trash2, Users, Check, ExternalLink } from 'lucide-react'
+import { reportActivity } from '@/lib/reportActivity'
 
 type Tab = 'account' | 'users'
 type Role = 'admin' | 'it_staff' | 'viewer'
@@ -90,6 +91,7 @@ function UsersTab() {
     const json = await res.json()
     setSaving(false)
     if (!res.ok) { setError(json.error || 'Lỗi'); return }
+    reportActivity({ action: 'Cấp quyền dashboard', entityType: 'admin_user', entityId: form.email, detail: `Cấp vai trò "${form.role}" cho ${form.email}` })
     setForm({ email: '', name: '', role: 'viewer' })
     setSuccess('Đã cấp quyền!'); setTimeout(() => setSuccess(''), 3000)
     load()
@@ -99,12 +101,14 @@ function UsersTab() {
     await fetch(`/api/admin/users/${encodeURIComponent(email)}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }),
     })
+    reportActivity({ action: 'Đổi vai trò dashboard', entityType: 'admin_user', entityId: email, detail: `${email} -> ${role}` })
     load()
   }
 
   async function remove(email: string) {
     if (!confirm(`Gỡ quyền dashboard của ${email}? (trở lại nhân viên thường, chỉ xem thiết bị của mình)`)) return
     await fetch(`/api/admin/users/${encodeURIComponent(email)}`, { method: 'DELETE' })
+    reportActivity({ action: 'Gỡ quyền dashboard', entityType: 'admin_user', entityId: email, detail: `Gỡ quyền dashboard của ${email}` })
     load()
   }
 

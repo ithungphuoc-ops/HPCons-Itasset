@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
+import { reportActivity } from '@/lib/reportActivity'
 
 export default function NewDepartmentPage() {
   const router = useRouter()
@@ -22,6 +23,7 @@ export default function NewDepartmentPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
+      reportActivity({ action: 'Thêm phòng ban', entityType: 'department', entityId: name, detail: `Tạo phòng ban "${name}"` })
       router.push('/dashboard/employees/new')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Có lỗi xảy ra')

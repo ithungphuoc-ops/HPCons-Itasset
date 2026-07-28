@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Mail, Phone, Building2, Laptop, Monitor, Cpu, Package, Calendar, Pencil, Trash2, Save, X, QrCode, ExternalLink, Plus, Search } from 'lucide-react'
 import Link from 'next/link'
 import { useRole } from '@/lib/hooks/useRole'
+import { reportActivity } from '@/lib/reportActivity'
 
 interface Employee {
   id: string; full_name: string; employee_code?: string
@@ -83,6 +84,7 @@ export default function EmployeeDetailPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
+      reportActivity({ action: 'Sửa nhân viên', entityType: 'employee', entityId: String(id), detail: `Cập nhật hồ sơ "${form.full_name}"` })
       setEmployee(json.data)
       setEditing(false)
     } catch (err) {
@@ -119,6 +121,7 @@ export default function EmployeeDetailPage() {
     setDeleting(true)
     try {
       await fetch(`/api/employees/${id}`, { method: 'DELETE' })
+      reportActivity({ action: 'Xoá nhân viên', entityType: 'employee', entityId: String(id), detail: `Xoá nhân viên "${employee?.full_name ?? id}"` })
       router.push('/dashboard/employees')
     } catch {
       setDeleting(false)

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
+import { reportActivity } from '@/lib/reportActivity'
 
 export default function NewEmployeePage() {
   const router = useRouter()
@@ -36,6 +37,7 @@ export default function NewEmployeePage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
+      reportActivity({ action: 'Thêm nhân viên', entityType: 'employee', entityId: form.employee_code || form.full_name, detail: `Tạo nhân viên "${form.full_name}"` })
       router.push('/dashboard/employees')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Có lỗi xảy ra')
