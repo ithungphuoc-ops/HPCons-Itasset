@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
+import DatePicker from '@/components/DatePicker'
 import type { DeviceCategory } from '@/lib/types'
 
 const CATEGORIES: { value: DeviceCategory; label: string }[] = [
@@ -195,14 +196,18 @@ function Field({
   return (
     <div className={className}>
       <label className="block text-sm text-gray-400 mb-1.5">{label}</label>
-      <input
-        type={type}
-        placeholder={placeholder}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        required={required}
-        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-      />
+      {type === 'date' ? (
+        <DatePicker value={value} onChange={onChange} />
+      ) : (
+        <input
+          type={type}
+          placeholder={placeholder}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          required={required}
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+        />
+      )}
     </div>
   )
 }
