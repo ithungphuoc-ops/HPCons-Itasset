@@ -62,6 +62,23 @@ export async function getSession(): Promise<Session | null> {
     return { uid: id.uid, email: id.email, profile };
   }
 
+  // Chưa có app_permissions/{uid}.itasset — nghĩa là quyền đang đến từ panel
+  // cục bộ cũ (/api/admin/users, khoá theo email, xem session.ts::profileByEmail)
+  // vốn VỠ khi người này đổi email ở app tổng (sự cố 12/08/2026). Nếu đang có
+  // hồ sơ cục bộ hợp lệ, TỰ ĐỘNG ghi lên app_permissions ngay lần đăng nhập
+  // này để những lần sau ổn định qua UID, không cần chờ chạy migration tay.
+  // Best-effort: lỗi ghi (mạng, quyền...) không chặn đăng nhập, chỉ bỏ qua.
+  if (localProfile?.role) {
+    try {
+      await getHpcoreDb().collection("app_permissions").doc(id.uid).set(
+        { itasset: localProfile.role },
+        { merge: true },
+      );
+    } catch {
+      // im lặng — vẫn cho vào bằng hồ sơ cục bộ như cũ, tự thử lại lần đăng nhập sau
+    }
+  }
+
   return {
     uid: id.uid,
     email: id.email,
