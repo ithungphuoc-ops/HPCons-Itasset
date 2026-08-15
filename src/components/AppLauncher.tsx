@@ -30,7 +30,22 @@ type RemoteApp = {
   comingSoon?: boolean
 }
 
-function Tile({ app, onNavigate }: { app: RemoteApp; onNavigate: () => void }) {
+/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc list ở trên. */
+function HighlightMatch({ text, query }: { text: string; query: string }) {
+  const q = query.trim()
+  if (!q) return <>{text}</>
+  const index = text.toLowerCase().indexOf(q.toLowerCase())
+  if (index === -1) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="rounded bg-green-500/20 px-0.5 font-semibold text-green-300">{text.slice(index, index + q.length)}</mark>
+      {text.slice(index + q.length)}
+    </>
+  )
+}
+
+function Tile({ app, onNavigate, query }: { app: RemoteApp; onNavigate: () => void; query: string }) {
   const Icon = (app.iconKey && ICONS[app.iconKey]) || AppWindow
   const current = !!app.href && app.href.includes(CURRENT_APP_HOST)
   const inner = (
@@ -47,7 +62,7 @@ function Tile({ app, onNavigate }: { app: RemoteApp; onNavigate: () => void }) {
         )}
       </div>
       <span className={`text-center text-xs font-medium leading-tight ${app.comingSoon ? 'text-gray-500' : 'text-gray-200'}`}>
-        {app.name}
+        <HighlightMatch text={app.name} query={query} />
       </span>
       {current && <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[9px] text-blue-400">Đang dùng</span>}
       {app.comingSoon && <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] text-amber-400">Sắp ra mắt</span>}
@@ -118,7 +133,7 @@ export function AppLauncher({ displayName, onClose }: { displayName?: string | n
                 <p className="font-semibold">{g.title}</p>
                 <p className="mb-3 text-xs text-gray-500">{g.subtitle}</p>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-                  {g.apps.map((app) => <Tile key={app.name} app={app} onNavigate={onClose} />)}
+                  {g.apps.map((app) => <Tile key={app.name} app={app} onNavigate={onClose} query={ql} />)}
                 </div>
               </div>
             ))
