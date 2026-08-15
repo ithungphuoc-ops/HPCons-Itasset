@@ -1,9 +1,11 @@
 'use client'
 import Link from 'next/link'
+import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { LayoutDashboard, Monitor, Users, QrCode, Settings, LogOut } from 'lucide-react'
 import { useRole } from '@/lib/hooks/useRole'
 import { UserAvatar } from '@/components/UserAvatar'
+import { AppLauncher } from '@/components/AppLauncher'
 
 const navItems = [
   { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard, adminOnly: false },
@@ -16,6 +18,7 @@ const navItems = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { isAdmin, isItStaff, isViewer, name, avatar } = useRole()
+  const [launcherOpen, setLauncherOpen] = useState(false)
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -30,9 +33,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Sidebar */}
       <aside className={`w-56 border-r border-gray-800 flex flex-col shrink-0 ${isHandover ? 'hidden' : ''}`}>
         <div className="px-5 py-5 border-b border-gray-800 flex items-center gap-3">
-          <Link href="/dashboard">
-            <img src="/logo.png" alt="ITAsset" className="w-8 h-8 rounded-lg object-contain" />
-          </Link>
+          <button
+            type="button"
+            onClick={() => setLauncherOpen(true)}
+            title="Danh mục ứng dụng HP Cons"
+            className="rounded-lg bg-white p-0.5 shrink-0 transition-transform hover:scale-105"
+          >
+            <img src="/logo.png" alt="HP Cons" className="w-7 h-7 rounded-md object-contain" />
+          </button>
           <span className="font-semibold tracking-tight">ITAsset</span>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
@@ -69,6 +77,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <main className="flex-1 overflow-y-auto">
         {children}
       </main>
+
+      {launcherOpen && <AppLauncher displayName={name} onClose={() => setLauncherOpen(false)} />}
     </div>
   )
 }
