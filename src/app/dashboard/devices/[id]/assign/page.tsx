@@ -4,6 +4,21 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Search, CheckCircle, User } from 'lucide-react'
 import Link from 'next/link'
 
+/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc `filtered` ở dưới. */
+function HighlightMatch({ text, query }: { text: string; query: string }) {
+  const q = query.trim()
+  if (!q) return <>{text}</>
+  const index = text.toLowerCase().indexOf(q.toLowerCase())
+  if (index === -1) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="rounded bg-green-500/20 px-0.5 font-semibold text-green-300">{text.slice(index, index + q.length)}</mark>
+      {text.slice(index + q.length)}
+    </>
+  )
+}
+
 interface Device { id: string; brand: string; model: string; asset_code: string; status: string; quantity: number }
 interface Employee { id: string; full_name: string; employee_code?: string; department?: { name: string } }
 
@@ -100,10 +115,11 @@ export default function AssignDevicePage() {
                 {emp.full_name.charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium truncate">{emp.full_name}</div>
+                <div className="text-sm font-medium truncate"><HighlightMatch text={emp.full_name} query={search} /></div>
                 <div className="text-xs text-gray-500">
                   {(emp.department as { name: string } | undefined)?.name}
-                  {emp.employee_code && ` · ${emp.employee_code}`}
+                  {emp.employee_code && ` · `}
+                  {emp.employee_code && <HighlightMatch text={emp.employee_code} query={search} />}
                 </div>
               </div>
               {selected?.id === emp.id && <CheckCircle size={15} className="text-blue-400 shrink-0" />}

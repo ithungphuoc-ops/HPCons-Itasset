@@ -6,6 +6,21 @@ import Link from 'next/link'
 import { useRole } from '@/lib/hooks/useRole'
 import { reportActivity } from '@/lib/reportActivity'
 
+/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc ở dưới. */
+function HighlightMatch({ text, query }: { text: string; query: string }) {
+  const q = query.trim()
+  if (!q) return <>{text}</>
+  const index = text.toLowerCase().indexOf(q.toLowerCase())
+  if (index === -1) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="rounded bg-green-500/20 px-0.5 font-semibold text-green-300">{text.slice(index, index + q.length)}</mark>
+      {text.slice(index + q.length)}
+    </>
+  )
+}
+
 interface Employee {
   id: string; full_name: string; employee_code?: string
   email?: string; phone?: string; is_active: boolean
@@ -296,8 +311,10 @@ export default function EmployeeDetailPage() {
                           <Icon size={14} className="text-gray-400" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium">{d.brand} {d.model}</div>
-                          <div className="text-xs text-gray-400 font-mono">{d.asset_code}</div>
+                          <div className="text-sm font-medium">
+                            <HighlightMatch text={d.brand} query={deviceSearch} /> <HighlightMatch text={d.model} query={deviceSearch} />
+                          </div>
+                          <div className="text-xs text-gray-400 font-mono"><HighlightMatch text={d.asset_code} query={deviceSearch} /></div>
                         </div>
                         <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded shrink-0">Trong kho</span>
                       </button>
