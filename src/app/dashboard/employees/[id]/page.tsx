@@ -1,25 +1,12 @@
 'use client'
 import { useState, useEffect } from 'react'
+import HighlightMatch, { normalizeSearch } from '@/components/HighlightMatch'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Mail, Phone, Building2, Laptop, Monitor, Cpu, Package, Calendar, Pencil, Trash2, Save, X, QrCode, ExternalLink, Plus, Search } from 'lucide-react'
 import Link from 'next/link'
 import { useRole } from '@/lib/hooks/useRole'
 import { reportActivity } from '@/lib/reportActivity'
 
-/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc ở dưới. */
-function HighlightMatch({ text, query }: { text: string; query: string }) {
-  const q = query.trim()
-  if (!q) return <>{text}</>
-  const index = text.toLowerCase().indexOf(q.toLowerCase())
-  if (index === -1) return <>{text}</>
-  return (
-    <>
-      {text.slice(0, index)}
-      <mark className="rounded bg-green-500/20 px-0.5 font-semibold text-green-300">{text.slice(index, index + q.length)}</mark>
-      {text.slice(index + q.length)}
-    </>
-  )
-}
 
 interface Employee {
   id: string; full_name: string; employee_code?: string
@@ -299,8 +286,8 @@ export default function EmployeeDetailPage() {
               <div className="max-h-80 overflow-y-auto space-y-1.5">
                 {availableDevices
                   .filter(d => {
-                    const q = deviceSearch.toLowerCase()
-                    return !q || d.asset_code.toLowerCase().includes(q) || d.brand.toLowerCase().includes(q) || d.model.toLowerCase().includes(q)
+                    const q = normalizeSearch(deviceSearch)
+                    return !q || normalizeSearch(d.asset_code).includes(q) || normalizeSearch(d.brand).includes(q) || normalizeSearch(d.model).includes(q)
                   })
                   .map(d => {
                     const Icon = CATEGORY_ICON[d.category] || Package
@@ -321,8 +308,8 @@ export default function EmployeeDetailPage() {
                     )
                   })}
                 {availableDevices.filter(d => {
-                  const q = deviceSearch.toLowerCase()
-                  return !q || d.asset_code.toLowerCase().includes(q) || d.brand.toLowerCase().includes(q) || d.model.toLowerCase().includes(q)
+                  const q = normalizeSearch(deviceSearch)
+                  return !q || normalizeSearch(d.asset_code).includes(q) || normalizeSearch(d.brand).includes(q) || normalizeSearch(d.model).includes(q)
                 }).length === 0 && (
                   <div className="text-center py-8 text-gray-500 text-sm">Không tìm thấy thiết bị trong kho</div>
                 )}

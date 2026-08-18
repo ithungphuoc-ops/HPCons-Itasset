@@ -3,6 +3,7 @@
 // AppLauncher — danh sách ứng dụng công ty (giống hệt DauThau/Task Manager/PKD),
 // lấy từ account.hpcore.vn/api/apps. Bấm vào logo ở đầu Sidebar để mở.
 import { useEffect, useState } from 'react'
+import HighlightMatch, { normalizeSearch } from '@/components/HighlightMatch'
 import {
   Clock, MapPin, FileCheck, Send, CalendarClock, BarChart3, Settings,
   Warehouse, Briefcase, Receipt, Workflow, Heart, Laptop, PenTool, ClipboardCheck,
@@ -30,20 +31,6 @@ type RemoteApp = {
   comingSoon?: boolean
 }
 
-/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc list ở trên. */
-function HighlightMatch({ text, query }: { text: string; query: string }) {
-  const q = query.trim()
-  if (!q) return <>{text}</>
-  const index = text.toLowerCase().indexOf(q.toLowerCase())
-  if (index === -1) return <>{text}</>
-  return (
-    <>
-      {text.slice(0, index)}
-      <mark className="rounded bg-green-500/20 px-0.5 font-semibold text-green-300">{text.slice(index, index + q.length)}</mark>
-      {text.slice(index + q.length)}
-    </>
-  )
-}
 
 function Tile({ app, onNavigate, query }: { app: RemoteApp; onNavigate: () => void; query: string }) {
   const Icon = (app.iconKey && ICONS[app.iconKey]) || AppWindow
@@ -87,8 +74,8 @@ export function AppLauncher({ displayName, onClose }: { displayName?: string | n
     return () => { ok = false }
   }, [])
 
-  const ql = q.trim().toLowerCase()
-  const list = (apps ?? []).filter((a) => !ql || a.name.toLowerCase().includes(ql))
+  const ql = normalizeSearch(q.trim())
+  const list = (apps ?? []).filter((a) => !ql || normalizeSearch(a.name).includes(ql))
   const groups = [
     { title: 'Nhân sự & Vận hành', subtitle: 'Chấm công, đơn từ, đặt phòng, báo cáo...', apps: list.filter((a) => a.category !== 'business') },
     { title: 'Ứng dụng nghiệp vụ', subtitle: 'Kinh doanh, kho, tài sản, quy trình...', apps: list.filter((a) => a.category === 'business') },

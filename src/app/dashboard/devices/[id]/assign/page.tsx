@@ -1,23 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
+import HighlightMatch, { normalizeSearch } from '@/components/HighlightMatch'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Search, CheckCircle, User } from 'lucide-react'
 import Link from 'next/link'
 
-/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc `filtered` ở dưới. */
-function HighlightMatch({ text, query }: { text: string; query: string }) {
-  const q = query.trim()
-  if (!q) return <>{text}</>
-  const index = text.toLowerCase().indexOf(q.toLowerCase())
-  if (index === -1) return <>{text}</>
-  return (
-    <>
-      {text.slice(0, index)}
-      <mark className="rounded bg-green-500/20 px-0.5 font-semibold text-green-300">{text.slice(index, index + q.length)}</mark>
-      {text.slice(index + q.length)}
-    </>
-  )
-}
 
 interface Device { id: string; brand: string; model: string; asset_code: string; status: string; quantity: number }
 interface Employee { id: string; full_name: string; employee_code?: string; department?: { name: string } }
@@ -56,9 +43,9 @@ export default function AssignDevicePage() {
   }, [id])
 
   const filtered = employees.filter(e =>
-    e.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    e.employee_code?.toLowerCase().includes(search.toLowerCase()) ||
-    (e.department as { name: string } | undefined)?.name?.toLowerCase().includes(search.toLowerCase())
+    normalizeSearch(e.full_name).includes(normalizeSearch(search)) ||
+    normalizeSearch(e.employee_code ?? '').includes(normalizeSearch(search)) ||
+    normalizeSearch((e.department as { name: string } | undefined)?.name ?? '').includes(normalizeSearch(search))
   )
 
   async function handleAssign() {
