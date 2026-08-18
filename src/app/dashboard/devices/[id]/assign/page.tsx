@@ -42,10 +42,15 @@ export default function AssignDevicePage() {
     load()
   }, [id])
 
+  // .trim() — gõ thừa dấu cách đầu/cuối trước đây làm lọt hết kết quả dù chữ
+  // khớp (khoảng trắng thừa trở thành 1 phần chuỗi tìm); HighlightMatch vốn
+  // đã trim, đây là chỗ duy nhất lệch luật (bug thật phát hiện qua code
+  // review 18/08/2026).
+  const q = normalizeSearch(search.trim())
   const filtered = employees.filter(e =>
-    normalizeSearch(e.full_name).includes(normalizeSearch(search)) ||
-    normalizeSearch(e.employee_code ?? '').includes(normalizeSearch(search)) ||
-    normalizeSearch((e.department as { name: string } | undefined)?.name ?? '').includes(normalizeSearch(search))
+    normalizeSearch(e.full_name).includes(q) ||
+    normalizeSearch(e.employee_code ?? '').includes(q) ||
+    normalizeSearch((e.department as { name: string } | undefined)?.name ?? '').includes(q)
   )
 
   async function handleAssign() {

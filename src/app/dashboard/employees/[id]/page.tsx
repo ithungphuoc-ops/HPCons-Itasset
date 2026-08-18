@@ -286,7 +286,9 @@ export default function EmployeeDetailPage() {
               <div className="max-h-80 overflow-y-auto space-y-1.5">
                 {availableDevices
                   .filter(d => {
-                    const q = normalizeSearch(deviceSearch)
+                    // .trim() — gõ thừa dấu cách đầu/cuối trước đây làm lọt hết
+                    // kết quả dù chữ khớp (bug thật phát hiện qua code review 18/08/2026).
+                    const q = normalizeSearch(deviceSearch.trim())
                     return !q || normalizeSearch(d.asset_code).includes(q) || normalizeSearch(d.brand).includes(q) || normalizeSearch(d.model).includes(q)
                   })
                   .map(d => {

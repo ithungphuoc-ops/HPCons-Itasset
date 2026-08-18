@@ -4,12 +4,14 @@
 // (hpcons-portal components/layout/AppLauncher.tsx): panel TRẮNG kể cả app
 // nền tối, header avatar 44px + dòng link "Về App Tổng · Tài khoản · Đăng xuất".
 // Danh sách lấy sống từ account.hpcore.vn/api/apps. Bấm logo đầu Sidebar để mở.
-import {
-
-/* Safelist mau tile tu API app tong (Tailwind chi compile class xuat hien
-   trong source — thieu la tile mat mau nen, icon trang vo hinh):
-   bg-amber-500 bg-blue-500 bg-cyan-500 bg-emerald-500 bg-fuchsia-500 bg-gray-500 bg-green-500 bg-indigo-500 bg-lime-500 bg-orange-500 bg-orange-600 bg-pink-500 bg-purple-500 bg-red-500 bg-rose-500 bg-sky-500 bg-slate-500 bg-teal-500 bg-violet-500 bg-yellow-500 */
- useEffect, useState } from 'react'
+//
+// Safelist màu tile từ API app tổng (Tailwind chỉ compile class xuất hiện
+// trong source — thiếu là tile mất màu nền, icon trắng vô hình). Đặt ở đây
+// (ngoài import, dạng comment JSDoc) thay vì chen giữa import { ... } như
+// trước đây — comment cũ dễ bị xoá/dời nhầm khi Prettier hay ai đó tổ chức
+// lại import (bug thật phát hiện qua code review 18/08/2026):
+// bg-amber-500 bg-blue-500 bg-cyan-500 bg-emerald-500 bg-fuchsia-500 bg-gray-500 bg-green-500 bg-indigo-500 bg-lime-500 bg-orange-500 bg-orange-600 bg-pink-500 bg-purple-500 bg-red-500 bg-rose-500 bg-sky-500 bg-slate-500 bg-teal-500 bg-violet-500 bg-yellow-500
+import { useEffect, useState } from 'react'
 import HighlightMatch, { normalizeSearch } from '@/components/HighlightMatch'
 import { UserAvatar } from '@/components/UserAvatar'
 import { useRole } from '@/lib/hooks/useRole'
