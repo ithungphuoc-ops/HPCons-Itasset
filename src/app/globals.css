@@ -1,8 +1,19 @@
 @import "tailwindcss";
 
+/**
+ * HPCons Design System V1.1 cho ITAsset (Sếp chốt ép chuẩn 17/08/2026,
+ * áp dụng 18/08/2026). App vốn hardcode class Tailwind (gray-950/900/800,
+ * blue-600...) ở mọi màn hình — thay vì sửa hàng trăm chỗ, ĐỊNH NGHĨA LẠI
+ * giá trị các nấc màu đó về đúng bảng V1.1 ngay tại tầng gốc:
+ *   - Thang xám tối  → nền Dark V1.1 (#0F1923 nền / #131F2B surface /
+ *     #182531 card / #1F2F3D elevated)
+ *   - Thang blue     → primary #096AA7
+ * Mọi class có sẵn tự đổi theo, không đụng file component nào.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0f1923;   /* V1.1 dark background */
+  --foreground: #f5f7fa;   /* V1.1 dark text-primary */
+  --hp-primary: #096aa7;
 }
 
 @theme inline {
@@ -10,17 +21,23 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Nền tối V1.1 (đè thang gray mặc định của Tailwind ở các nấc app đang dùng) */
+  --color-gray-950: #0f1923;
+  --color-gray-900: #131f2b;
+  --color-gray-800: #1f2f3d;
+  --color-gray-700: #33465a;
+
+  /* Primary V1.1 */
+  --color-blue-700: #07507e;
+  --color-blue-600: #096aa7;
+  --color-blue-500: #2e86bd;
+  --color-blue-400: #7fc4e8;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* V1.1: Inter (trước đây Arial đè mất Geist đã nạp) */
+  font-family: var(--font-geist-sans), Inter, Roboto, Arial, sans-serif;
 }
