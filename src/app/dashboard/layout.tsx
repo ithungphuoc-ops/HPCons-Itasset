@@ -42,18 +42,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <img src="/logo.png" alt="HP Cons" className="w-7 h-7 rounded-md object-contain" />
           </button>
           <span className="font-semibold tracking-tight">ITAsset</span>
+        </div>
+        <div className="px-3 pt-3">
           <a
             href="https://quacuatoi.hpcore.vn"
             target="_blank"
             rel="noopener noreferrer"
             title="Quà của tôi"
-            className="relative ml-auto rounded-lg p-1.5 text-gray-400 shrink-0 transition-colors hover:text-white hover:bg-gray-800"
+            className="flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-amber-400"
           >
             <Gift size={18} />
             {/* Số điểm tạm để 0 — chưa nối UrBox thật, xem hpcons-quacuatoi/openspec */}
-            <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
-              0
-            </span>
+            <span>0 điểm</span>
           </a>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
