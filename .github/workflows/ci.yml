@@ -1,0 +1,27 @@
+name: CI
+
+# Cổng kiểm tra tự động (thêm 20/08/2026) — máy tự build thử, lỗi kiểu/cú
+# pháp thì báo đỏ ngay trên GitHub, không cần chờ ai nhớ chạy tay. Không cần
+# secret nào: đã kiểm chứng build sạch dù thiếu hết biến môi trường.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
