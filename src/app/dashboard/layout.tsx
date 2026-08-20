@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Monitor, Users, QrCode, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, Monitor, Users, QrCode, Settings, LogOut, Gift } from 'lucide-react'
 import { useRole } from '@/lib/hooks/useRole'
 import { UserAvatar } from '@/components/UserAvatar'
 import { AppLauncher } from '@/components/AppLauncher'
@@ -42,6 +42,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <img src="/logo.png" alt="HP Cons" className="w-7 h-7 rounded-md object-contain" />
           </button>
           <span className="font-semibold tracking-tight">ITAsset</span>
+          <a
+            href="https://quacuatoi.hpcore.vn"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Quà của tôi"
+            className="relative ml-auto rounded-lg p-1.5 text-gray-400 shrink-0 transition-colors hover:text-white hover:bg-gray-800"
+          >
+            <Gift size={18} />
+            {/* Số điểm tạm để 0 — chưa nối UrBox thật, xem hpcons-quacuatoi/openspec */}
+            <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+              0
+            </span>
+          </a>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
           {navItems.filter(item => !item.adminOnly || isAdmin).map(({ href, label, icon: Icon }) => {
