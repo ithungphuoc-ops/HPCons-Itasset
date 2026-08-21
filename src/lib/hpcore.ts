@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
@@ -63,12 +64,20 @@ export async function verifyHpcore(cookie: string | undefined): Promise<{ uid: s
  * (không cache) để avatar mới đồng bộ ngay từ lần đăng nhập/tải trang kế tiếp.
  * Lỗi đọc cross-project → null, không chặn đăng nhập.
  */
-export async function getCentralAvatar(uid: string): Promise<string | null> {
-  try {
-    const snap = await getHpcoreDb().collection("users").doc(uid).get();
-    const avatarUrl = snap.data()?.avatarUrl;
-    return typeof avatarUrl === "string" && avatarUrl ? avatarUrl : null;
-  } catch {
-    return null;
-  }
-}
+// Cache 30 giây (thêm 21/08/2026, sau sự cố hết hạn mức Firestore project
+// trung tâm hpcons-portal): trước đây đọc SỐNG mỗi lần xác minh phiên (mọi
+// F5/chuyển trang) — nhiều lượt gọi liên tiếp của CÙNG 1 người trong 30s
+// giờ chỉ tốn 1 lượt đọc thật.
+export const getCentralAvatar = unstable_cache(
+  async (uid: string): Promise<string | null> => {
+    try {
+      const snap = await getHpcoreDb().collection("users").doc(uid).get();
+      const avatarUrl = snap.data()?.avatarUrl;
+      return typeof avatarUrl === "string" && avatarUrl ? avatarUrl : null;
+    } catch {
+      return null;
+    }
+  },
+  ["itasset-central-avatar"],
+  { revalidate: 30 },
+);

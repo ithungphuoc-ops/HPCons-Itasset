@@ -1,5 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { unstable_cache } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
 import { verifyHpcore, getHpcoreDb, getCentralAvatar, SSO_COOKIE_NAME } from "@/lib/hpcore";
 import type { FirestoreProfile, UserRole } from "@/lib/firestore/types";
@@ -26,16 +27,23 @@ async function profileByEmail(email: string): Promise<FirestoreProfile | null> {
  * = uid app tổng) — nguồn quyết định duy nhất kể từ khi có trang "Quản lý ứng
  * dụng" ở app tổng. Lỗi đọc cross-project → null, rơi về hồ sơ cục bộ (không
  * chặn đăng nhập).
+ *
+ * Cache 30 giây (thêm 21/08/2026, sau sự cố hết hạn mức Firestore project
+ * trung tâm) — trước đây đọc SỐNG mỗi lần xác minh phiên.
  */
-async function fetchCentralRole(uid: string): Promise<UserRole | null> {
-  try {
-    const snap = await getHpcoreDb().collection("app_permissions").doc(uid).get();
-    const role = snap.data()?.itasset;
-    return typeof role === "string" ? (role as UserRole) : null;
-  } catch {
-    return null;
-  }
-}
+const fetchCentralRole = unstable_cache(
+  async (uid: string): Promise<UserRole | null> => {
+    try {
+      const snap = await getHpcoreDb().collection("app_permissions").doc(uid).get();
+      const role = snap.data()?.itasset;
+      return typeof role === "string" ? (role as UserRole) : null;
+    } catch {
+      return null;
+    }
+  },
+  ["itasset-central-role"],
+  { revalidate: 30 },
+);
 
 export async function getSession(): Promise<Session | null> {
   const cookieStore = await cookies();
