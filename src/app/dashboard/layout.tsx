@@ -6,6 +6,7 @@ import { LayoutDashboard, Monitor, Users, QrCode, Settings, LogOut, Gift } from 
 import { useRole } from '@/lib/hooks/useRole'
 import { UserAvatar } from '@/components/UserAvatar'
 import { AppLauncher } from '@/components/AppLauncher'
+import GiftPopup from '@/components/GiftPopup'
 
 const navItems = [
   { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard, adminOnly: false },
@@ -19,6 +20,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const { isAdmin, isItStaff, isViewer, name, avatar } = useRole()
   const [launcherOpen, setLauncherOpen] = useState(false)
+  const [giftOpen, setGiftOpen] = useState(false)
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -44,17 +46,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <span className="font-semibold tracking-tight">ITAsset</span>
         </div>
         <div className="px-3 pt-3">
-          <a
-            href="https://quacuatoi.hpcore.vn"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => setGiftOpen(true)}
             title="Quà của tôi"
-            className="flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-amber-400"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-amber-400"
           >
             <Gift size={18} />
             {/* Số điểm tạm để 0 — chưa nối UrBox thật, xem hpcons-quacuatoi/openspec */}
             <span>0 điểm</span>
-          </a>
+          </button>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
           {navItems.filter(item => !item.adminOnly || isAdmin).map(({ href, label, icon: Icon }) => {
@@ -98,17 +99,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           tránh làm hỏng thêm phần điều hướng đang chạy — xử lý responsive toàn diện cho sidebar
           là việc lớn hơn, cần làm riêng nếu Sếp muốn.
       */}
-      <a
-        href="https://quacuatoi.hpcore.vn"
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        type="button"
+        onClick={() => setGiftOpen(true)}
         title="Quà của tôi"
         className="md:hidden fixed top-4 right-4 z-30 w-11 h-11 rounded-full bg-amber-500 text-gray-900 shadow-lg flex items-center justify-center"
       >
         <Gift size={20} />
-      </a>
+      </button>
 
       {launcherOpen && <AppLauncher displayName={name} onClose={() => setLauncherOpen(false)} />}
+      {giftOpen && <GiftPopup onClose={() => setGiftOpen(false)} />}
     </div>
   )
 }
