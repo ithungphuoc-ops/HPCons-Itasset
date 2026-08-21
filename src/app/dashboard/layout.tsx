@@ -91,6 +91,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {children}
       </main>
 
+      {/* Nút "Quà của tôi" nổi riêng cho màn hình hẹp — thiếu sót phát hiện 22/08/2026: sidebar
+          của app này chưa hề có xử lý responsive nào cho di động (không ẩn/thu gọn ở bất kỳ
+          breakpoint nào), nên trên điện thoại thật sidebar bị bóp méo và nút Quà của tôi bên
+          trong gần như không bấm được. Đây là nút nổi ĐỘC LẬP, không đụng vào sidebar hiện có để
+          tránh làm hỏng thêm phần điều hướng đang chạy — xử lý responsive toàn diện cho sidebar
+          là việc lớn hơn, cần làm riêng nếu Sếp muốn.
+      */}
+      <a
+        href="https://quacuatoi.hpcore.vn"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Quà của tôi"
+        className="md:hidden fixed top-4 right-4 z-30 w-11 h-11 rounded-full bg-amber-500 text-gray-900 shadow-lg flex items-center justify-center"
+      >
+        <Gift size={20} />
+      </a>
+
       {launcherOpen && <AppLauncher displayName={name} onClose={() => setLauncherOpen(false)} />}
     </div>
   )
