@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# Cấu hình CodeRabbit — thêm 04/09/2026 theo yêu cầu chuẩn hoá review cho toàn bộ app con.
+# Tài liệu đầy đủ: https://docs.coderabbit.ai/reference/configuration
+
+language: "vi-VN"
+
+tone_instructions: >
+  Ưu tiên chỉ ra lỗi logic thật, lỗ hổng bảo mật, và sai sót phân quyền. Hạn chế góp ý
+  style/format nếu code đã nhất quán với phần còn lại của repo. Trả lời ngắn gọn, không lặp
+  lại nội dung diff.
+
+reviews:
+  profile: "assertive"
+  auto_review:
+    enabled: true
+    drafts: false
+
+  path_filters:
+    - "!node_modules/**"
+    - "!.next/**"
+    - "!openspec/changes/**/tasks.md"
+    - "!**/*.lock"
+    - "!package-lock.json"
+
+  path_instructions:
+    - path: "**/*.tsx"
+      instructions: >
+        App quản lý tài sản CNTT. Kiểm tra kỹ việc gán/thu hồi tài sản có ghi lịch sử (ai, lúc nào,
+        thiết bị nào) — không cho phép đổi trạng thái gán tài sản mà không lưu vết.
+
+  pre_merge_checks:
+    docstrings:
+      mode: "warning"
+      threshold: 80
+    title:
+      mode: "warning"
+    description:
+      mode: "warning"
+    issue_assessment:
+      mode: "off" # repo không dùng issue tracker liên kết PR
+    custom_checks:
+      - name: "Một luật, một nơi giữ"
+        mode: "warning"
+        instructions: >
+          Nếu PR thêm một điều kiện/luật nghiệp vụ (chặn hành động, tính quyền, tính trạng
+          thái...) mà điều kiện tương đương đã tồn tại ở một hàm/nơi khác trong repo, PR phải
+          GỌI LẠI đúng hàm đó — không viết lại điều kiện tương đương ở một nơi thứ hai. Hai nơi
+          cùng trả lời một câu hỏi mà có thể lệch nhau là lỗi nghiêm trọng cần gắn cờ.
+      - name: "Không tin dữ liệu từ client"
+        mode: "warning"
+        instructions: >
+          Với API route hoặc hàm ghi dữ liệu (Firestore/DB) nhận tham số quyết định quyền/trạng
+          thái từ phía gọi (client, props UI), phải tự kiểm tra lại điều kiện đó ở tầng ghi —
+          không chỉ dựa vào việc UI đã ẩn/khóa nút. Gắn cờ nếu tầng ghi tin thẳng tham số mà
+          không xác minh lại.
+
+chat:
+  auto_reply: true
