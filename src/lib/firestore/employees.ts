@@ -1,10 +1,11 @@
 import "server-only";
-import { unstable_cache } from "next/cache";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
 import { toDepartmentJson, getDepartment } from "@/lib/firestore/departments";
 import type { FirestoreEmployee } from "@/lib/firestore/types";
 
 const collection = () => adminDb.collection("employees");
+const TAG_ACTIVE_EMPLOYEES = "itasset-active-employees";
 
 export async function toEmployeeJson(employee: FirestoreEmployee) {
   const department = employee.departmentId ? await getDepartment(employee.departmentId) : null;
@@ -32,7 +33,7 @@ export const listActiveEmployees = unstable_cache(
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as FirestoreEmployee);
   },
   ["itasset-active-employees"],
-  { revalidate: 30 },
+  { revalidate: 30, tags: [TAG_ACTIVE_EMPLOYEES] },
 );
 
 export async function getEmployeeById(id: string): Promise<FirestoreEmployee | null> {
@@ -69,13 +70,16 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Firest
     createdAt: new Date().toISOString(),
   };
   const ref = await collection().add(employee);
+  revalidateTag(TAG_ACTIVE_EMPLOYEES, { expire: 0 });
   return { id: ref.id, ...employee };
 }
 
 export async function updateEmployee(id: string, input: Partial<CreateEmployeeInput>): Promise<void> {
   await collection().doc(id).set(input, { merge: true });
+  revalidateTag(TAG_ACTIVE_EMPLOYEES, { expire: 0 });
 }
 
 export async function deactivateEmployee(id: string): Promise<void> {
   await collection().doc(id).set({ isActive: false }, { merge: true });
+  revalidateTag(TAG_ACTIVE_EMPLOYEES, { expire: 0 });
 }

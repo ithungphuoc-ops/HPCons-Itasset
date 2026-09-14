@@ -1,9 +1,10 @@
 import "server-only";
-import { unstable_cache } from "next/cache";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
 import type { FirestoreDevice, LaptopSpecs, MonitorSpecs } from "@/lib/firestore/types";
 
 const collection = () => adminDb.collection("devices");
+export const TAG_DEVICES = "itasset-devices";
 
 // Chuyển document Firestore (camelCase) sang shape JSON cũ (snake_case) mà
 // frontend đang tiêu thụ, để không phải sửa phía client.
@@ -41,13 +42,17 @@ function fromDoc(doc: FirebaseFirestore.DocumentSnapshot): FirestoreDevice {
 // vì `updateDevice()` bên dưới dùng `getDeviceById()` để đọc-sửa-đổi (merge laptopSpecs/
 // monitorSpecs) — nếu tra từ cache có thể merge nhầm dữ liệu CŨ (trước lần sửa gần nhất trong
 // vòng cache 30s), làm mất bản cập nhật ngay trước đó. `getDeviceById()` phải luôn đọc SỐNG.
+// 🔴 (phát hiện qua review, cùng ngày như departments.ts): thêm `tags`/`revalidateTag()` ở mọi
+// hàm ghi bên dưới (create/update/setStatus/delete) — tránh đúng lỗi "tạo/sửa xong chưa thấy
+// ngay" đã gặp ở phòng ban, và tránh import Excel 2 lượt liên tiếp trong 30s tạo trùng thiết bị
+// do bảng chống trùng dựng từ danh sách cache cũ (chưa thấy thiết bị vừa tạo ở lượt trước).
 export const listAllDevices = unstable_cache(
   async (): Promise<FirestoreDevice[]> => {
     const snap = await collection().orderBy("assetCode").get();
     return snap.docs.map(fromDoc);
   },
   ["itasset-devices"],
-  { revalidate: 30 },
+  { revalidate: 30, tags: [TAG_DEVICES] },
 );
 
 export async function getDeviceById(id: string): Promise<FirestoreDevice | null> {
@@ -104,6 +109,7 @@ export async function createDevice(input: CreateDeviceInput): Promise<FirestoreD
     monitorSpecs: input.monitorSpecs ?? null,
   };
   const ref = await collection().add(device);
+  revalidateTag(TAG_DEVICES, { expire: 0 });
   return { id: ref.id, ...device };
 }
 
@@ -134,12 +140,15 @@ export async function updateDevice(id: string, input: UpdateDeviceInput): Promis
   }
 
   await collection().doc(id).set(update, { merge: true });
+  revalidateTag(TAG_DEVICES, { expire: 0 });
 }
 
 export async function setDeviceStatus(id: string, status: FirestoreDevice["status"]): Promise<void> {
   await collection().doc(id).set({ status, updatedAt: new Date().toISOString() }, { merge: true });
+  revalidateTag(TAG_DEVICES, { expire: 0 });
 }
 
 export async function deleteDevice(id: string): Promise<void> {
   await collection().doc(id).delete();
+  revalidateTag(TAG_DEVICES, { expire: 0 });
 }
