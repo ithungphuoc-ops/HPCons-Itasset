@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
 import type { FirestoreDevice, LaptopSpecs, MonitorSpecs } from "@/lib/firestore/types";
 
@@ -35,10 +36,19 @@ function fromDoc(doc: FirebaseFirestore.DocumentSnapshot): FirestoreDevice {
   return { id: doc.id, ...doc.data() } as FirestoreDevice;
 }
 
-export async function listAllDevices(): Promise<FirestoreDevice[]> {
-  const snap = await collection().orderBy("assetCode").get();
-  return snap.docs.map(fromDoc);
-}
+// ⚠️ Xem quy ước hạn mức Firestore đầy đủ ở đầu lib/firestore/departments.ts. Chỉ cache
+// `listAllDevices()` — KHÔNG đổi `getDeviceById()` sang đọc từ list đã cache dù cùng dạng N+1,
+// vì `updateDevice()` bên dưới dùng `getDeviceById()` để đọc-sửa-đổi (merge laptopSpecs/
+// monitorSpecs) — nếu tra từ cache có thể merge nhầm dữ liệu CŨ (trước lần sửa gần nhất trong
+// vòng cache 30s), làm mất bản cập nhật ngay trước đó. `getDeviceById()` phải luôn đọc SỐNG.
+export const listAllDevices = unstable_cache(
+  async (): Promise<FirestoreDevice[]> => {
+    const snap = await collection().orderBy("assetCode").get();
+    return snap.docs.map(fromDoc);
+  },
+  ["itasset-devices"],
+  { revalidate: 30 },
+);
 
 export async function getDeviceById(id: string): Promise<FirestoreDevice | null> {
   const doc = await collection().doc(id).get();

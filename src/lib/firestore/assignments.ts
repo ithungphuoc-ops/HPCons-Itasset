@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
 import { getDeviceById, setDeviceStatus, toDeviceJson } from "@/lib/firestore/devices";
 import { getEmployeeById, toEmployeeJson } from "@/lib/firestore/employees";
@@ -69,10 +70,19 @@ export async function listActiveAssignmentsForEmployee(employeeId: string): Prom
   return snap.docs.map(fromDoc);
 }
 
-export async function listAllActiveAssignments(): Promise<FirestoreAssignment[]> {
-  const snap = await collection().where("isActive", "==", true).get();
-  return snap.docs.map(fromDoc);
-}
+// ⚠️ Xem quy ước hạn mức Firestore ở đầu lib/firestore/departments.ts — hàm này chạy mỗi lần tải
+// trang danh sách thiết bị (kết hợp với listAllDevices()), đúng dạng "quét toàn collection không
+// cache" đã gây sự cố ở app khác. `assignDevice()`/`closeActiveAssignment()` bên dưới KHÔNG dùng
+// hàm này (tự query riêng theo đúng deviceId trong transaction), nên cache 30s ở đây không ảnh
+// hưởng logic đóng/mở assignment lúc cấp phát — chỉ ảnh hưởng độ mới của trang xem danh sách.
+export const listAllActiveAssignments = unstable_cache(
+  async (): Promise<FirestoreAssignment[]> => {
+    const snap = await collection().where("isActive", "==", true).get();
+    return snap.docs.map(fromDoc);
+  },
+  ["itasset-active-assignments"],
+  { revalidate: 30 },
+);
 
 export async function listRecentAssignments(limit: number): Promise<FirestoreAssignment[]> {
   const snap = await collection().orderBy("createdAt", "desc").limit(limit).get();

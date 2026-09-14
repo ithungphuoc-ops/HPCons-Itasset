@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
 import { toDepartmentJson, getDepartment } from "@/lib/firestore/departments";
 import type { FirestoreEmployee } from "@/lib/firestore/types";
@@ -20,10 +21,19 @@ export async function toEmployeeJson(employee: FirestoreEmployee) {
   };
 }
 
-export async function listActiveEmployees(): Promise<FirestoreEmployee[]> {
-  const snap = await collection().where("isActive", "==", true).orderBy("fullName").get();
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as FirestoreEmployee);
-}
+// ⚠️ Xem quy ước hạn mức Firestore đầy đủ ở đầu lib/firestore/departments.ts. Chỉ cache
+// `listActiveEmployees()` — KHÔNG đổi `getEmployeeById()` sang tra từ list này dù cùng dạng N+1,
+// vì list này CHỈ gồm nhân viên đang active (`where isActive==true`) — nhân viên đã nghỉ (cần
+// hiện lại trong lịch sử assignment cũ) sẽ không tìm thấy nếu tra nhầm từ đây. `getEmployeeById()`
+// phải luôn đọc trực tiếp để đúng cho CẢ nhân viên đã nghỉ.
+export const listActiveEmployees = unstable_cache(
+  async (): Promise<FirestoreEmployee[]> => {
+    const snap = await collection().where("isActive", "==", true).orderBy("fullName").get();
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as FirestoreEmployee);
+  },
+  ["itasset-active-employees"],
+  { revalidate: 30 },
+);
 
 export async function getEmployeeById(id: string): Promise<FirestoreEmployee | null> {
   const doc = await collection().doc(id).get();
