@@ -1,10 +1,12 @@
 import "server-only";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
-import { getDeviceById, setDeviceStatus, toDeviceJson } from "@/lib/firestore/devices";
+import { getDeviceById, setDeviceStatus, toDeviceJson, TAG_DEVICES } from "@/lib/firestore/devices";
 import { getEmployeeById, toEmployeeJson } from "@/lib/firestore/employees";
 import type { DeviceStatus, FirestoreAssignment } from "@/lib/firestore/types";
 
 const collection = () => adminDb.collection("assignments");
+const TAG_ACTIVE_ASSIGNMENTS = "itasset-active-assignments";
 
 function fromDoc(doc: FirebaseFirestore.DocumentSnapshot): FirestoreAssignment {
   return { id: doc.id, ...doc.data() } as FirestoreAssignment;
@@ -69,10 +71,19 @@ export async function listActiveAssignmentsForEmployee(employeeId: string): Prom
   return snap.docs.map(fromDoc);
 }
 
-export async function listAllActiveAssignments(): Promise<FirestoreAssignment[]> {
-  const snap = await collection().where("isActive", "==", true).get();
-  return snap.docs.map(fromDoc);
-}
+// ⚠️ Xem quy ước hạn mức Firestore ở đầu lib/firestore/departments.ts — hàm này chạy mỗi lần tải
+// trang danh sách thiết bị (kết hợp với listAllDevices()), đúng dạng "quét toàn collection không
+// cache" đã gây sự cố ở app khác. `assignDevice()`/`closeActiveAssignment()` bên dưới KHÔNG dùng
+// hàm này (tự query riêng theo đúng deviceId trong transaction), nên cache 30s ở đây không ảnh
+// hưởng logic đóng/mở assignment lúc cấp phát — chỉ ảnh hưởng độ mới của trang xem danh sách.
+export const listAllActiveAssignments = unstable_cache(
+  async (): Promise<FirestoreAssignment[]> => {
+    const snap = await collection().where("isActive", "==", true).get();
+    return snap.docs.map(fromDoc);
+  },
+  ["itasset-active-assignments"],
+  { revalidate: 30, tags: [TAG_ACTIVE_ASSIGNMENTS] },
+);
 
 export async function listRecentAssignments(limit: number): Promise<FirestoreAssignment[]> {
   const snap = await collection().orderBy("createdAt", "desc").limit(limit).get();
@@ -119,6 +130,9 @@ export async function assignDevice(params: {
     tx.set(assignmentRef, assignment);
     tx.set(deviceRef, { status: "in_use", updatedAt: new Date().toISOString() }, { merge: true });
   });
+  // Đổi status thiết bị NGAY trong transaction (không qua setDeviceStatus()) — làm mới cả 2 tag.
+  revalidateTag(TAG_ACTIVE_ASSIGNMENTS, { expire: 0 });
+  revalidateTag(TAG_DEVICES, { expire: 0 });
 }
 
 /**
@@ -148,6 +162,7 @@ export async function closeActiveAssignment(params: {
     );
   });
   await batch.commit();
+  revalidateTag(TAG_ACTIVE_ASSIGNMENTS, { expire: 0 });
 
-  await setDeviceStatus(params.deviceId, params.newStatus);
+  await setDeviceStatus(params.deviceId, params.newStatus); // tự revalidateTag(TAG_DEVICES) riêng
 }
