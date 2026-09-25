@@ -45,7 +45,27 @@ const fetchCentralRole = unstable_cache(
   { revalidate: 30 },
 );
 
+// Lối tắt CHỈ hoạt động khi chạy `next dev` cục bộ (NODE_ENV tự động là "development" —
+// KHÔNG BAO GIỜ đúng ở production build/deploy, Vercel luôn build với NODE_ENV=production).
+// Cookie phiên SSO domain ".hpcore.vn" không bao giờ được trình duyệt gửi tới localhost dù có
+// đủ credentials — đây là giới hạn của trình duyệt, không phải thiếu cấu hình — nên không cách
+// nào đăng nhập thật ở local. Thêm 25/09/2026 theo yêu cầu Sếp muốn thao tác thử toàn bộ
+// dashboard ở local. Giả lập vai trò admin để xem được mọi trang (kể cả trang chỉ-admin).
+const LOCAL_DEV_SESSION: Session = {
+  uid: "local-dev",
+  email: "dev@local",
+  profile: {
+    id: "dev@local",
+    fullName: "Dev cục bộ (giả lập)",
+    role: "admin",
+    createdAt: new Date().toISOString(),
+    avatar: null,
+  },
+};
+
 export async function getSession(): Promise<Session | null> {
+  if (process.env.NODE_ENV === "development") return LOCAL_DEV_SESSION;
+
   const cookieStore = await cookies();
   const id = await verifyHpcore(cookieStore.get(SESSION_COOKIE_NAME)?.value);
   if (!id) return null;

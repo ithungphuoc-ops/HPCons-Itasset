@@ -101,3 +101,30 @@ export interface FirestoreProfile {
   // hpcons-portal) — không lưu cục bộ, null nếu người dùng chưa có avatar.
   avatar?: string | null;
 }
+
+// tasks/{id} — module "Công việc" (ticket sửa chữa/bảo hành/cài đặt/hỗ trợ IT), bổ sung
+// 25/09/2026 từ app "Trạm IT" (bản dựng riêng buổi sáng cùng ngày, xem báo cáo so sánh trong
+// hội thoại). Module HOÀN TOÀN MỚI — không có gốc Supabase — nên dùng camelCase xuyên suốt cả ở
+// tầng Firestore lẫn JSON trả về cho frontend, KHÔNG theo quy ước snake_case như Device/
+// Employee/Assignment (vốn giữ snake_case để tương thích hợp đồng API cũ thời Supabase).
+export type TaskType = "repair" | "warranty" | "install" | "support" | "other";
+export type TaskPriority = "high" | "medium" | "low";
+
+export interface FirestoreTask {
+  id: string;
+  type: TaskType;
+  title: string;
+  requesterName: string;
+  // Chưa nối danh sách nhân viên IT thật (chờ xác nhận nguồn dữ liệu nhân sự) — tạm nhập tay,
+  // xem TASK_ASSIGNEES ở src/lib/types/index.ts.
+  assigneeName: string | null;
+  deviceId: string | null;
+  priority: TaskPriority;
+  dueDate: string; // yyyy-mm-dd
+  // Trạng thái hiển thị (Mới/Quá hạn/Hoàn thành/Hoàn thành quá hạn) KHÔNG lưu ở đây — luôn tính
+  // tự động từ (dueDate, completed) lúc hiển thị, xem src/lib/task-status.ts. Tránh lưu field
+  // trạng thái tĩnh dễ lệch với ngày thực tế (bài học rút ra khi làm Trạm IT buổi sáng).
+  completed: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

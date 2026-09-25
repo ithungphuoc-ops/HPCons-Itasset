@@ -5,6 +5,13 @@ import { verifyHpcore, hpcoreLoginUrl, SSO_COOKIE_NAME } from '@/lib/hpcore'
 const DASHBOARD_ROLES = ['admin', 'it_staff', 'viewer']
 
 export async function proxy(request: NextRequest) {
+  // Lối tắt CHỈ hoạt động khi chạy `next dev` cục bộ (NODE_ENV tự động "development" — KHÔNG
+  // BAO GIỜ đúng ở production build/deploy). Cookie SSO domain ".hpcore.vn" không bao giờ được
+  // trình duyệt gửi tới localhost dù có đủ credentials, nên nếu không có dòng này thì local
+  // luôn bị đá về trang đăng nhập thật, không cách nào thao tác thử được. Thêm 25/09/2026 theo
+  // yêu cầu Sếp. Phối hợp với lối tắt tương tự ở lib/session.ts::getSession().
+  if (process.env.NODE_ENV === 'development') return NextResponse.next()
+
   const { pathname, search, origin } = request.nextUrl
 
   // Xác minh phiên đăng nhập CHUNG của app tổng (cookie .hpcore.vn)

@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Monitor, Users, QrCode, Settings, LogOut, Gift } from 'lucide-react'
+import { LayoutDashboard, Monitor, Users, QrCode, Settings, LogOut, Gift, ClipboardCheck } from 'lucide-react'
 import { useRole } from '@/lib/hooks/useRole'
 import { UserAvatar } from '@/components/UserAvatar'
 import { AppLauncher } from '@/components/AppLauncher'
@@ -10,6 +10,7 @@ import GiftPopup from '@/components/GiftPopup'
 
 const navItems = [
   { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard, adminOnly: false },
+  { href: '/dashboard/tasks', label: 'Công việc', icon: ClipboardCheck, adminOnly: false },
   { href: '/dashboard/devices', label: 'Thiết bị', icon: Monitor, adminOnly: false },
   { href: '/dashboard/employees', label: 'Nhân viên', icon: Users, adminOnly: false },
   { href: '/dashboard/scan', label: 'Quét QR', icon: QrCode, adminOnly: false },

@@ -82,3 +82,26 @@ export interface Profile {
   role: UserRole
   created_at: string
 }
+
+// Công việc (ticket IT) — bổ sung 25/09/2026, camelCase xuyên suốt (xem ghi chú ở
+// lib/firestore/types.ts::FirestoreTask).
+export type TaskType = 'repair' | 'warranty' | 'install' | 'support' | 'other'
+export type TaskPriority = 'high' | 'medium' | 'low'
+
+export interface Task {
+  id: string
+  type: TaskType
+  title: string
+  requesterName: string
+  assigneeName: string | null
+  deviceId: string | null
+  priority: TaskPriority
+  dueDate: string
+  completed: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// Chưa nối danh sách nhân viên IT thật (chờ xác nhận nguồn dữ liệu HPcore) — tạm cố định,
+// giống cách app "Trạm IT" đã làm sáng 25/09/2026.
+export const TASK_ASSIGNEES = ['Trần Minh Khoa', 'Đỗ Thành Nam', 'Chưa phân công']

@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Search, Plus, Upload, Monitor, Laptop, Cpu, Package, Printer, Wifi, Zap, QrCode, FileSpreadsheet } from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import type { DeviceStatus, DeviceCategory } from '@/lib/types'
 import { useRole } from '@/lib/hooks/useRole'
@@ -15,6 +16,9 @@ interface Device {
   serial_number?: string; status: DeviceStatus; warranty_expiry?: string
   quantity: number; quantity_in_use: number; quantity_in_stock: number
   assignees?: { id: string; full_name: string }[]
+  // Đã có sẵn ở API (toDeviceJson) nhưng trang danh sách trước đây chưa khai báo/hiển thị —
+  // bổ sung 25/09/2026 để thấy ảnh thiết bị ngay trong bảng, giống phong cách demo "Trạm IT".
+  image_url?: string | null
 }
 
 const STATUS_LABEL: Record<DeviceStatus, string> = {
@@ -172,7 +176,9 @@ export default function DevicesPage() {
               <th className="px-4 py-3 font-medium">Hãng / Model</th>
               <th className="px-4 py-3 font-medium">Serial</th>
               <th className="px-4 py-3 font-medium">Cấp cho</th>
-              <th className="px-4 py-3 font-medium">Tồn kho</th>
+              <th className="px-4 py-3 font-medium text-right">Tổng số</th>
+              <th className="px-4 py-3 font-medium text-right">Đang cấp</th>
+              <th className="px-4 py-3 font-medium text-right">Tồn kho</th>
               <th className="px-4 py-3 font-medium">Trạng thái</th>
               <th className="px-4 py-3 font-medium">Bảo hành</th>
               <th className="px-4 py-3 font-medium"></th>
@@ -180,10 +186,10 @@ export default function DevicesPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} className="px-4 py-16 text-center text-gray-500">Đang tải...</td></tr>
+              <tr><td colSpan={12} className="px-4 py-16 text-center text-gray-500">Đang tải...</td></tr>
             ) : devices.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-16 text-center text-gray-500">
+                <td colSpan={12} className="px-4 py-16 text-center text-gray-500">
                   <Package size={32} className="mx-auto mb-3 opacity-30" />
                   <p>Chưa có thiết bị nào</p>
                   <Link href="/dashboard/devices/new" className="inline-block mt-3 text-blue-400 hover:text-blue-300 text-sm">
@@ -215,8 +221,22 @@ export default function DevicesPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-white">{device.brand}</div>
-                    <div className="text-gray-400 text-xs">{device.model}</div>
+                    <div className="flex items-center gap-2.5">
+                      {device.image_url ? (
+                        <Image
+                          src={device.image_url}
+                          alt=""
+                          width={28}
+                          height={28}
+                          unoptimized
+                          className="h-7 w-7 flex-none rounded-md border border-gray-700 object-cover"
+                        />
+                      ) : null}
+                      <div>
+                        <div className="font-medium text-white">{device.brand}</div>
+                        <div className="text-gray-400 text-xs">{device.model}</div>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-gray-400 font-mono text-xs">{device.serial_number || '—'}</td>
                   <td className="px-4 py-3">
@@ -230,35 +250,14 @@ export default function DevicesPage() {
                       <span className="text-gray-600 text-xs">—</span>
                     )}
                   </td>
-                  {/* Cột tồn kho */}
+                  {/* 3 cột Tổng số/Đang cấp/Tồn kho tách riêng — giống bảng demo "Trạm IT" sáng
+                      25/09/2026, thay cho ô gộp + thanh progress trước đây. */}
+                  <td className="px-4 py-3 text-right font-mono text-gray-300">{device.quantity || 1}</td>
+                  <td className="px-4 py-3 text-right font-mono text-gray-300">{device.quantity_in_use ?? 0}</td>
+                  <td className="px-4 py-3 text-right font-mono font-semibold text-white">{device.quantity_in_stock ?? (device.quantity || 1)}</td>
                   <td className="px-4 py-3">
-                    {(() => {
-                      const total = device.quantity || 1
-                      const inStock = device.quantity_in_stock ?? total
-                      const inUse = device.quantity_in_use ?? 0
-                      return (
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-white font-semibold text-sm">{inStock}</span>
-                            <span className="text-gray-500 text-xs">/ {total}</span>
-                          </div>
-                          {total > 1 && (
-                            <div className="w-16 bg-gray-700 rounded-full h-1">
-                              <div
-                                className={`h-1 rounded-full ${inStock === 0 ? 'bg-red-500' : inStock < total / 2 ? 'bg-yellow-500' : 'bg-green-500'}`}
-                                style={{ width: `${Math.round((inStock / total) * 100)}%` }}
-                              />
-                            </div>
-                          )}
-                          {inUse > 0 && (
-                            <span className="text-xs text-gray-500">{inUse} đang dùng</span>
-                          )}
-                        </div>
-                      )
-                    })()}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-md text-xs font-medium ${STATUS_COLOR[device.status]}`}>
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${STATUS_COLOR[device.status]}`}>
+                      <span className="h-1.5 w-1.5 rounded-full bg-current" />
                       {STATUS_LABEL[device.status]}
                     </span>
                   </td>
