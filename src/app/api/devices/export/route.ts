@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
-import { listAllDevices } from '@/lib/firestore/devices'
-import { listAllActiveAssignments } from '@/lib/firestore/assignments'
-import { getEmployeeById, toEmployeeJson } from '@/lib/firestore/employees'
+import { listAllDevices, toDeviceJson } from '@/lib/firestore/devices'
+import { fmtDate } from '@/lib/kho/config'
 import { requireSession } from '@/lib/session'
 
 const CATEGORY: Record<string, string> = {
@@ -20,42 +19,28 @@ export async function GET() {
     return NextResponse.json({ error: (e as Error).message }, { status: 403 })
   }
 
+  // Kho Tổng (30/09/2026): xuất theo cột mới — số liệu tồn lấy sẵn trên thiết bị, không đọc thêm
+  // lịch sử / nhân viên (tiết kiệm lượt đọc). Người đang giữ xem ở trang chi tiết.
   const devices = await listAllDevices()
-  const activeAssignments = await listAllActiveAssignments()
-  const activeByDevice = new Map(activeAssignments.map((a) => [a.deviceId, a]))
-
-  const rows = await Promise.all(
-    devices.map(async (d) => {
-      const active = activeByDevice.get(d.id)
-      const employee = active ? await getEmployeeById(active.employeeId) : null
-      const employeeJson = employee ? await toEmployeeJson(employee) : null
-      const ls = d.laptopSpecs
-      const ms = d.monitorSpecs
-
-      return {
-        'Mã tài sản': d.assetCode,
-        'Loại': CATEGORY[d.category] || d.category,
-        'Hãng': d.brand,
-        'Model': d.model,
-        'Serial': d.serialNumber || '',
-        'Trạng thái': STATUS[d.status] || d.status,
-        'Ngày mua': d.purchaseDate ? new Date(d.purchaseDate).toLocaleDateString('vi-VN') : '',
-        'Giá mua (VNĐ)': d.purchasePrice || '',
-        'Bảo hành đến': d.warrantyExpiry ? new Date(d.warrantyExpiry).toLocaleDateString('vi-VN') : '',
-        'Người sử dụng': employeeJson?.full_name || '',
-        'Mã NV': employeeJson?.employee_code || '',
-        'Phòng ban': employeeJson?.department?.name || '',
-        'Ngày cấp': active?.assignedDate ? new Date(active.assignedDate).toLocaleDateString('vi-VN') : '',
-        'CPU': ls?.cpu || '',
-        'RAM': ls?.ram || '',
-        'Ổ cứng': ls?.storage || '',
-        'Màn hình': ls?.display || ms?.screenSize || '',
-        'HĐH': ls?.os || '',
-        'GPU': ls?.gpu || '',
-        'Ghi chú': d.notes || '',
-      }
-    }),
-  )
+  const rows = devices.map((d) => {
+    const j = toDeviceJson(d)
+    return {
+      'Mã tài sản': d.assetCode,
+      'Loại': CATEGORY[d.category] || d.category,
+      'Hãng': d.brand,
+      'Model': d.model,
+      'Số Seri': d.serialNumber || '',
+      'Nhập kho': j.stock.in,
+      'Đã cấp': j.stock.out,
+      'Thu hồi': j.stock.back,
+      'Luân chuyển': j.stock.move,
+      'Tồn kho': j.stock.left,
+      'Trạng thái': STATUS[d.status] || d.status,
+      'Bảo hành từ': fmtDate(d.warrantyFrom),
+      'Bảo hành đến': fmtDate(d.warrantyExpiry),
+      ...j.specs,
+    }
+  })
 
   const ws = XLSX.utils.json_to_sheet(rows)
   ws['!cols'] = [
@@ -73,7 +58,7 @@ export async function GET() {
   return new NextResponse(buf, {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="ThietBi_ITAsset_${today}.xlsx"`,
+      'Content-Disposition': `attachment; filename="ThietBi_KhoIT_${today}.xlsx"`,
     },
   })
 }

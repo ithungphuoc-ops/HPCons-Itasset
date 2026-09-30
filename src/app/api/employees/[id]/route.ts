@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getEmployeeById, updateEmployee, deactivateEmployee, toEmployeeJson } from '@/lib/firestore/employees'
-import { listAssignmentsForEmployee, toAssignmentJson } from '@/lib/firestore/assignments'
+import { personHoldings } from '@/lib/firestore/moves'
+import { toDeviceJson } from '@/lib/firestore/devices'
 import { requireSession, requireWriteAccess } from '@/lib/session'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -10,11 +11,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const employee = await getEmployeeById(id)
     if (!employee) return NextResponse.json({ error: 'Không tìm thấy nhân viên' }, { status: 404 })
 
-    const assignments = await listAssignmentsForEmployee(id)
-    return NextResponse.json({
-      data: await toEmployeeJson(employee),
-      assignments: await Promise.all(assignments.map((a) => toAssignmentJson(a, { withDevice: true }))),
-    })
+    // Kho Tổng (30/09/2026): thiết bị đang giữ tính từ phiếu có tên người này (giữ shape
+    // "assignments" cũ cho trang nhân viên: đang giữ = is_active, từng giữ = lịch sử)
+    const { holdings, moves } = await personHoldings(employee.fullName)
+    const heldIds = new Set(holdings.map((h) => h.device.id))
+    const active = holdings.map((h) => ({ id: h.device.id, assigned_date: h.since, is_active: true, quantity: h.qty, device: toDeviceJson(h.device) }))
+    const pastIds = new Map<string, { date: string; line: (typeof moves)[number]['lines'][number] }>()
+    for (const m of moves) if (m.type !== 'NK') for (const l of m.lines) if (!heldIds.has(l.deviceId) && !pastIds.has(l.deviceId)) pastIds.set(l.deviceId, { date: m.date, line: l })
+    const history = [...pastIds.entries()].map(([deviceId, { date, line }]) => ({
+      id: deviceId, assigned_date: date, is_active: false,
+      device: { id: deviceId, asset_code: line.assetCode, brand: line.name, model: '', category: 'other', status: '' },
+    }))
+    return NextResponse.json({ data: await toEmployeeJson(employee), assignments: [...active, ...history] })
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 })
   }

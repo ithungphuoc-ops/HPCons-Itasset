@@ -59,7 +59,7 @@ function AccountTab() {
             </a>
           </div>
         </div>
-        <p className="text-xs text-gray-500 mt-4">Đăng nhập ITAsset dùng chung tài khoản với account.hpcore.vn. Mật khẩu do app tổng quản lý.</p>
+        <p className="text-xs text-gray-500 mt-4">Đăng nhập Kho Tổng dùng chung tài khoản với account.hpcore.vn. Mật khẩu do app tổng quản lý.</p>
       </div>
     </div>
   )

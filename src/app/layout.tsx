@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ITAsset — Quản lý tài sản IT",
-  description: "Hệ thống quản lý tài sản IT nội bộ",
+  title: "Kho Tổng — HP Cons",
+  description: "Kho Tổng: Kho IT, Kho VPP, Kho Thi công, Kho Chơn Thành",
   icons: { icon: "/logo.png" },
 };
 
@@ -25,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="vi"
       className={`${geistSans.variable} ${geistMono.variable} h-full`}
     >
       <body className="min-h-full flex flex-col">

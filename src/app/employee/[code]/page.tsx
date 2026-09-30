@@ -2,8 +2,8 @@ import { notFound } from 'next/navigation'
 import { User, Monitor, Laptop, Cpu, Package, Building2, Printer } from 'lucide-react'
 import Link from 'next/link'
 import { getEmployeeById, findEmployeeByEmployeeCode, toEmployeeJson } from '@/lib/firestore/employees'
-import { listActiveAssignmentsForEmployee } from '@/lib/firestore/assignments'
-import { getDeviceById, toDeviceJson } from '@/lib/firestore/devices'
+import { personHoldings } from '@/lib/firestore/moves'
+import { toDeviceJson } from '@/lib/firestore/devices'
 
 const CATEGORY_LABEL: Record<string, string> = {
   laptop: 'Laptop', monitor: 'Màn hình', pc: 'PC / Máy tính để bàn',
@@ -23,8 +23,8 @@ export default async function EmployeePublicPage({ params }: { params: Promise<{
   if (!found) notFound()
   const employee = await toEmployeeJson(found)
 
-  // Lấy tất cả thiết bị đang cấp cho nhân viên này
-  const activeAssignments = await listActiveAssignmentsForEmployee(found.id)
+  // Thiết bị đang giữ — Kho Tổng (30/09/2026): tính từ phiếu Cấp phát / Thu hồi / Luân chuyển
+  const { holdings } = await personHoldings(found.fullName)
 
   type DeviceRow = {
     id: string; asset_code: string; qr_code: string; category: string
@@ -33,22 +33,14 @@ export default async function EmployeePublicPage({ params }: { params: Promise<{
     monitor_specs: Record<string, string> | null
     assigned_date: string; quantity: number; assignment_id: string
   }
-  const devices: DeviceRow[] = (
-    await Promise.all(
-      activeAssignments
-        .sort((a, b) => b.assignedDate.localeCompare(a.assignedDate))
-        .map(async (a) => {
-          const device = await getDeviceById(a.deviceId)
-          if (!device) return null
-          return {
-            ...(toDeviceJson(device) as unknown as Omit<DeviceRow, 'assigned_date' | 'quantity' | 'assignment_id'>),
-            assigned_date: a.assignedDate,
-            quantity: a.quantity,
-            assignment_id: a.id,
-          }
-        }),
-    )
-  ).filter((d): d is DeviceRow => !!d)
+  const devices: DeviceRow[] = holdings
+    .sort((a, b) => b.since.localeCompare(a.since))
+    .map((h) => ({
+      ...(toDeviceJson(h.device) as unknown as Omit<DeviceRow, 'assigned_date' | 'quantity' | 'assignment_id'>),
+      assigned_date: h.since,
+      quantity: h.qty,
+      assignment_id: h.device.id,
+    }))
 
   // Group theo category
   const grouped: Record<string, DeviceRow[]> = {}
@@ -183,7 +175,7 @@ export default async function EmployeePublicPage({ params }: { params: Promise<{
           </div>
         )}
 
-        <p className="text-center text-xs text-gray-600 mt-8">ITAsset — Hệ thống quản lý tài sản IT · HPCONS</p>
+        <p className="text-center text-xs text-gray-600 mt-8">Kho Tổng · HP CONS</p>
       </div>
     </div>
   )

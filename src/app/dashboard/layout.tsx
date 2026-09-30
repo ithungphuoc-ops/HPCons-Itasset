@@ -2,14 +2,16 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Monitor, Users, QrCode, Settings, LogOut, Gift, ClipboardCheck } from 'lucide-react'
+import { LayoutDashboard, Monitor, Users, QrCode, Settings, LogOut, Gift, ClipboardCheck, ArrowLeft, Warehouse } from 'lucide-react'
 import { useRole } from '@/lib/hooks/useRole'
 import { UserAvatar } from '@/components/UserAvatar'
 import { AppLauncher } from '@/components/AppLauncher'
 import GiftPopup from '@/components/GiftPopup'
+import { APP_NAME, KHO_LIST } from '@/lib/kho/config'
 
+// Menu Kho IT (Kho Tổng, 30/09/2026). Trang /dashboard = danh sách kho; vào 1 kho thì menu đổi theo kho đó.
 const navItems = [
-  { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard, adminOnly: false },
+  { href: '/dashboard/it', label: 'Tổng quan', icon: LayoutDashboard, adminOnly: false },
   { href: '/dashboard/tasks', label: 'Công việc', icon: ClipboardCheck, adminOnly: false },
   { href: '/dashboard/devices', label: 'Thiết bị', icon: Monitor, adminOnly: false },
   { href: '/dashboard/employees', label: 'Nhân viên', icon: Users, adminOnly: false },
@@ -29,12 +31,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     window.location.href = 'https://account.hpcore.vn/login'
   }
 
-  const isHandover = pathname.endsWith('/handover')
+  // Trang danh sách kho (và các kho chưa làm) → menu hiện các kho; còn lại là menu Kho IT
+  const inKhoList = pathname === '/dashboard' || pathname.startsWith('/dashboard/kho/')
 
   return (
     <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
       {/* Sidebar */}
-      <aside className={`w-56 border-r border-gray-800 flex flex-col shrink-0 ${isHandover ? 'hidden' : ''}`}>
+      <aside className="w-56 border-r border-gray-800 flex flex-col shrink-0">
         <div className="px-5 py-5 border-b border-gray-800 flex items-center gap-3">
           <button
             type="button"
@@ -44,7 +47,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           >
             <img src="/logo.png" alt="HP Cons" className="w-7 h-7 rounded-md object-contain" />
           </button>
-          <span className="font-semibold tracking-tight">ITAsset</span>
+          <span className="font-semibold tracking-tight">{APP_NAME}</span>
         </div>
         <div className="px-3 pt-3">
           <button
@@ -59,16 +62,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {navItems.filter(item => !item.adminOnly || isAdmin).map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
-            return (
-              <Link key={href} href={href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${active ? 'bg-blue-600/20 text-blue-400 font-medium' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
-                <Icon size={16} />
-                {label}
+          {inKhoList ? (
+            <>
+              <Link href="/dashboard" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${pathname === '/dashboard' ? 'bg-blue-600/20 text-blue-400 font-medium' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
+                <Warehouse size={16} /> Tất cả kho
               </Link>
-            )
-          })}
+              {KHO_LIST.map((k) => (
+                <Link key={k.slug} href={k.href}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${pathname.startsWith(k.href) ? 'bg-blue-600/20 text-blue-400 font-medium' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
+                  <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: k.color }} /> {k.name}
+                </Link>
+              ))}
+            </>
+          ) : (
+            <>
+              <Link href="/dashboard" className="flex items-center gap-2 px-3 py-2 text-xs text-gray-500 hover:text-white">
+                <ArrowLeft size={13} /> {APP_NAME}
+              </Link>
+              <div className="flex items-center gap-2 px-3 pb-2 text-sm font-semibold text-white">
+                <span className="w-2.5 h-2.5 rounded-sm" style={{ background: KHO_LIST[0].color }} /> {KHO_LIST[0].name}
+              </div>
+              {navItems.filter(item => !item.adminOnly || isAdmin).map(({ href, label, icon: Icon }) => {
+                const active = pathname === href || (href !== '/dashboard/it' && pathname.startsWith(href))
+                return (
+                  <Link key={href} href={href}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${active ? 'bg-blue-600/20 text-blue-400 font-medium' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
+                    <Icon size={16} />
+                    {label}
+                  </Link>
+                )
+              })}
+            </>
+          )}
         </nav>
         {/* Tài khoản đang đăng nhập */}
         <div className="px-4 py-3 border-t border-gray-800/50 flex items-center gap-2.5">

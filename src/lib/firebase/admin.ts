@@ -44,7 +44,14 @@ function getAdminFirestore(): Firestore {
     // Cho phép field value undefined trong .set()/.update() (bỏ qua thay vì
     // crash) — tiện khi API route build object update từ body request có thể
     // thiếu field, giữ đúng kiểu "partial update" như Supabase .update() cũ.
-    firestoreInstance.settings({ ignoreUndefinedProperties: true });
+    // try/catch (30/09/2026): khi 2 bundle (trang RSC + route handler) cùng nạp file này, getFirestore()
+    // trả về CÙNG 1 instance đã được bundle kia gọi settings() rồi → gọi lần 2 sẽ ném lỗi 500
+    // ("Firestore has already been initialized"). Lần đầu đã bật cờ rồi nên bỏ qua là đúng.
+    try {
+      firestoreInstance.settings({ ignoreUndefinedProperties: true });
+    } catch {
+      /* đã cấu hình ở bundle khác */
+    }
   }
   return firestoreInstance;
 }

@@ -41,3 +41,20 @@ body {
   /* V1.1: Inter (trước đây Arial đè mất Geist đã nạp) */
   font-family: var(--font-geist-sans), Inter, Roboto, Arial, sans-serif;
 }
+
+/* ---------- Phiếu in Kho Tổng (30/09/2026) ----------
+ * Khi in chỉ hiện đúng tờ phiếu (#print-area), ẩn toàn bộ giao diện app. Khổ A4, lề do tờ phiếu tự chừa. */
+.phieu-sheet { background: #fff; color: #000; width: 210mm; max-width: 100%; min-height: 297mm; margin: 0 auto;
+  padding: 14mm 14mm 16mm; font-family: "Times New Roman", Times, serif; font-size: 13.5pt; line-height: 1.35; }
+.phieu-sheet table { width: 100%; border-collapse: collapse; font-size: 12pt; }
+.phieu-sheet th, .phieu-sheet td { border: 1px solid #000; padding: 5px 6px; vertical-align: middle; }
+.phieu-sheet .dotted { border-bottom: 1px dotted #000; display: inline-block; min-width: 180px; }
+@media print {
+  @page { size: A4; margin: 0; }
+  html, body { background: #fff !important; }
+  body * { visibility: hidden !important; }
+  #print-area, #print-area * { visibility: visible !important; }
+  #print-area { position: absolute; left: 0; top: 0; width: 210mm; padding: 0 !important; }
+  #print-area > div { box-shadow: none !important; }
+  #print-area .phieu-sheet { box-shadow: none !important; margin: 0; min-height: auto; }
+}

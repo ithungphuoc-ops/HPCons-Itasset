@@ -1,466 +1,360 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+// Chi tiết thiết bị — Kho Tổng (30/09/2026), đúng thiết kế Sếp chốt:
+//  Thông tin chung (sửa xong bấm LƯU, không tự lưu) · Nhập kho / Đã cấp / Thu hồi / Luân chuyển /
+//  Tồn kho tự tính · Thông số kĩ thuật riêng theo Loại · 4 bảng lịch sử · Đang giữ thiết bị · QR.
+//  Thông số + 4 bảng lịch sử mặc định THU GỌN, bấm tiêu đề mới xổ ra; lập phiếu bằng 4 nút ở trang
+//  danh sách Thiết bị (Sếp chốt 30/09 — bỏ nút "Thêm dòng" trong chi tiết cho đỡ trùng).
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, QrCode, User, Calendar, DollarSign, Shield, Cpu, Monitor, HardDrive, Download, Trash2, Pencil, Printer, ArrowRightLeft, RotateCcw, Search } from 'lucide-react'
 import Link from 'next/link'
-import type { Device, Assignment } from '@/lib/types'
+import { ArrowLeft, ChevronRight, Download, Printer, QrCode, Save, Trash2, Undo2, User } from 'lucide-react'
+import DatePicker from '@/components/DatePicker'
 import { useRole } from '@/lib/hooks/useRole'
+import {
+  CATEGORY_LABEL, CATEGORY_ORDER, MOVE_DEFS, MOVE_ORDER, SPEC_FIELDS, STATUS_COLOR, STATUS_LABEL, STATUS_ORDER,
+  fmtDate, deviceName, todayIso, type MoveType,
+} from '@/lib/kho/config'
+import { computeHolders } from '@/lib/kho/holders'
+import type { DeviceCategory, DeviceStatus } from '@/lib/types'
+import type { FirestoreMove } from '@/lib/firestore/types'
+import { PrintPreview, type PrintableMove } from '@/components/kho/PhieuPrint'
 
-const STATUS_LABEL: Record<string, string> = {
-  in_use: 'Đang dùng', in_stock: 'Trong kho', broken: 'Hỏng', liquidated: 'Thanh lý',
+interface DeviceJson {
+  id: string; asset_code: string; category: DeviceCategory; brand: string; model: string
+  serial_number: string | null; status: DeviceStatus; warranty_from: string | null; warranty_expiry: string | null
+  image_url: string | null; specs: Record<string, string>; stock_migrated: boolean
+  stock: { in: number; out: number; back: number; move: number; left: number; held: number }
 }
-const STATUS_COLOR: Record<string, string> = {
-  in_use: 'bg-green-500/20 text-green-400 border-green-500/30',
-  in_stock: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  broken: 'bg-red-500/20 text-red-400 border-red-500/30',
-  liquidated: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+type Form = {
+  asset_code: string; category: DeviceCategory; brand: string; model: string; serial_number: string
+  status: DeviceStatus; warranty_from: string; warranty_expiry: string; specs: Record<string, string>
+}
+const toForm = (d: DeviceJson): Form => ({
+  asset_code: d.asset_code, category: d.category, brand: d.brand || '', model: d.model || '', serial_number: d.serial_number || '',
+  status: d.status, warranty_from: d.warranty_from || '', warranty_expiry: d.warranty_expiry || '', specs: { ...(d.specs || {}) },
+})
+
+function dayDiff(a: string, b: string) {
+  const p = (s: string) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).getTime() }
+  return Math.round((p(b) - p(a)) / 86400000)
+}
+function WarrantyBadge({ to }: { to: string }) {
+  if (!to) return null
+  const left = dayDiff(todayIso(), to)
+  if (left < 0) return <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">Hết hạn</span>
+  if (left <= 30) return <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">Sắp hết · còn {left} ngày</span>
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">Còn hạn · {left} ngày</span>
 }
 
-interface Employee { id: string; full_name: string; employee_code: string; department?: { name: string } }
+// Cột của từng bảng lịch sử (đúng thiết kế Sếp) — [tiêu đề, lấy giá trị]
+type Row = { m: FirestoreMove; qty: number; condition: string; note: string }
+const COLS: Record<MoveType, [string, (r: Row) => string][]> = {
+  NK: [['Ngày nhập', (r) => fmtDate(r.m.date)], ['Số lượng', (r) => String(r.qty)], ['Nhà cung cấp', (r) => r.m.info.ncc || ''], ['Người nhập', (r) => r.m.info.nguoi || ''], ['Tình trạng', (r) => r.condition], ['Ghi chú', (r) => r.note || r.m.info.dien || '']],
+  XK: [['Người nhận', (r) => r.m.info.nguoi || ''], ['Số lượng', (r) => String(r.qty)], ['Ngày cấp phát', (r) => fmtDate(r.m.date)], ['Lý do cấp phát', (r) => r.m.info.lydo || ''], ['Tình trạng', (r) => r.condition], ['Phòng ban', (r) => r.m.info.pb || ''], ['Ghi chú', (r) => r.note]],
+  TH: [['Người giao', (r) => r.m.info.nguoi || ''], ['Số lượng', (r) => String(r.qty)], ['Ngày thu hồi', (r) => fmtDate(r.m.date)], ['Lý do thu hồi', (r) => r.m.info.lydo || ''], ['Tình trạng', (r) => r.condition], ['Phòng ban', (r) => r.m.info.pb || ''], ['Ghi chú', (r) => r.note]],
+  LC: [['Người chuyển', (r) => r.m.info.nguoi || ''], ['Người nhận', (r) => r.m.info.nguoi2 || ''], ['Số lượng', (r) => String(r.qty)], ['Ngày chuyển', (r) => fmtDate(r.m.date)], ['Lý do chuyển', (r) => r.m.info.lydo || ''], ['Tình trạng', (r) => r.condition], ['Phòng ban chuyển', (r) => r.m.info.pb || ''], ['Phòng ban nhận', (r) => r.m.info.pb2 || ''], ['Ghi chú', (r) => r.note]],
+}
 
 export default function DeviceDetailPage() {
-  const { id } = useParams()
+  const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const { canWrite } = useRole()
-  const [device, setDevice] = useState<Device | null>(null)
-  const [assignments, setAssignments] = useState<Assignment[]>([])
+  const { canWrite, isAdmin } = useRole()
+  const [device, setDevice] = useState<DeviceJson | null>(null)
+  const [moves, setMoves] = useState<FirestoreMove[]>([])
+  const [form, setForm] = useState<Form | null>(null)
   const [loading, setLoading] = useState(true)
-  const [qrDataUrl, setQrDataUrl] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [qr, setQr] = useState('')
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }))
+  const [preview, setPreview] = useState<PrintableMove | null>(null)
+  const [confirmDel, setConfirmDel] = useState(false)
 
-  // Delete modal
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState('')
+  const [reload, setReload] = useState(0)
+  const load = () => setReload((n) => n + 1)
+  useEffect(() => {
+    let alive = true
+    fetch(`/api/devices/${id}`).then(async (res) => {
+      const json = await res.json()
+      if (!alive) return
+      if (!res.ok || !json.data) { router.push('/dashboard/devices'); return }
+      setDevice(json.data); setForm(toForm(json.data)); setMoves(json.moves || []); setLoading(false)
+    })
+    return () => { alive = false }
+  }, [id, router, reload])
 
-  // Thu hồi modal
-  const [showReturnModal, setShowReturnModal] = useState(false)
-  const [returnStatus, setReturnStatus] = useState<'in_stock' | 'broken'>('in_stock')
-  const [returnNotes, setReturnNotes] = useState('')
-  const [returning, setReturning] = useState(false)
-  const [returnError, setReturnError] = useState('')
+  useEffect(() => {
+    if (!device) return
+    import('qrcode').then(({ default: QRCode }) =>
+      QRCode.toDataURL(`${window.location.origin}/device/${device.id}`, { width: 200, margin: 2, color: { dark: '#ffffff', light: '#111827' } }).then(setQr))
+  }, [device])
 
-  // Luân chuyển modal
-  const [showTransferModal, setShowTransferModal] = useState(false)
-  const [employees, setEmployees] = useState<Employee[]>([])
-  const [empSearch, setEmpSearch] = useState('')
-  const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null)
-  const [transferNotes, setTransferNotes] = useState('')
-  const [transferring, setTransferring] = useState(false)
-  const [transferError, setTransferError] = useState('')
+  const dirty = useMemo(() => !!device && !!form && JSON.stringify(toForm(device)) !== JSON.stringify(form), [device, form])
+  useEffect(() => {
+    const h = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = '' } }
+    window.addEventListener('beforeunload', h)
+    return () => window.removeEventListener('beforeunload', h)
+  }, [dirty])
 
-  const loadPage = useCallback(async () => {
-    const res = await fetch(`/api/devices/${id}`)
+  const holders = useMemo(() => (device ? computeHolders(moves, device.id).filter((h) => h.qty > 0) : []), [moves, device])
+
+  async function save() {
+    if (!form || !device) return
+    if (!form.asset_code.trim()) { setMsg({ ok: false, text: 'Mã tài sản không được để trống' }); return }
+    setSaving(true); setMsg(null)
+    const fields = SPEC_FIELDS[form.category] || []
+    const keys = new Set([...fields, ...Object.keys(device.specs || {})])
+    const specs = Object.fromEntries([...keys].map((k) => [k, form.specs[k] || '']))
+    const res = await fetch(`/api/devices/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, specs }),
+    })
     const json = await res.json()
-    if (!res.ok || !json.data) { router.push('/dashboard/devices'); return }
-    setDevice(json.data as Device)
-    setAssignments((json.assignments as Assignment[]) || [])
-    const QRCode = (await import('qrcode')).default
-    const url = `${window.location.origin}/device/${json.data.id}`
-    const dataUrl = await QRCode.toDataURL(url, { width: 200, margin: 2, color: { dark: '#ffffff', light: '#111827' } })
-    setQrDataUrl(dataUrl)
-    setLoading(false)
-  }, [id, router])
+    setSaving(false)
+    if (!res.ok) { setMsg({ ok: false, text: json.error || 'Chưa lưu được' }); return }
+    setDevice(json.data); setForm(toForm(json.data)); setMsg({ ok: true, text: 'Đã lưu' })
+    setTimeout(() => setMsg(null), 2500)
+  }
 
-  useEffect(() => { loadPage() }, [loadPage])
-
-  async function handleDelete() {
-    setDeleting(true); setDeleteError('')
+  async function removeDevice() {
     const res = await fetch(`/api/devices/${id}`, { method: 'DELETE' })
     const json = await res.json()
-    if (!res.ok) { setDeleteError(json.error); setDeleting(false); return }
+    if (!res.ok) { setConfirmDel(false); setMsg({ ok: false, text: json.error }); return }
     router.push('/dashboard/devices')
   }
 
-  async function handleReturn() {
-    setReturning(true); setReturnError('')
-    const res = await fetch('/api/assignments', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: id, new_status: returnStatus, notes: returnNotes }),
-    })
+  async function removeMove(m: FirestoreMove) {
+    if (!confirm(`Xoá phiếu ${m.so || '(dữ liệu cũ)'}? Số liệu tồn sẽ được trả lại như trước khi lập phiếu.`)) return
+    const res = await fetch(`/api/moves/${m.id}`, { method: 'DELETE' })
     const json = await res.json()
-    if (!res.ok) { setReturnError(json.error); setReturning(false); return }
-    setShowReturnModal(false); setReturnNotes(''); setReturning(false)
-    await loadPage()
+    if (!res.ok) { alert(json.error); return }
+    load()
   }
 
-  async function openTransferModal() {
-    setShowTransferModal(true); setSelectedEmp(null); setEmpSearch(''); setTransferNotes(''); setTransferError('')
-    const res = await fetch('/api/employees')
-    const json = await res.json()
-    setEmployees((json.data as Employee[]) || [])
-  }
+  if (loading || !device || !form) return <div className="p-8 text-gray-400">Đang tải...</div>
 
-  async function handleTransfer() {
-    if (!selectedEmp) return
-    setTransferring(true); setTransferError('')
-    const res = await fetch('/api/assignments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: id, employee_id: selectedEmp.id, notes: transferNotes }),
-    })
-    const json = await res.json()
-    if (!res.ok) { setTransferError(json.error); setTransferring(false); return }
-    setShowTransferModal(false); setTransferring(false)
-    await loadPage()
-  }
+  const f = form
+  const set = (patch: Partial<Form>) => setForm({ ...f, ...patch })
+  const ro = !canWrite
+  const input = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-70'
+  const s = device.stock
+  const specFields = SPEC_FIELDS[f.category] || []
+  const extraSpecs = Object.keys(f.specs).filter((k) => !specFields.includes(k) && f.specs[k])
 
-  function normalizeVi(s: string) {
-    return s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, m => m === 'đ' ? 'd' : 'D').toLowerCase()
-  }
-  const filteredEmps = employees.filter(e => {
-    const q = normalizeVi(empSearch)
-    return !q || normalizeVi(e.full_name).includes(q) || normalizeVi(e.employee_code || '').includes(q)
+  const rowsOf = (t: MoveType): Row[] => moves.filter((m) => m.type === t).map((m) => {
+    const ls = m.lines.filter((l) => l.deviceId === device.id)
+    return { m, qty: ls.reduce((a, l) => a + l.qty, 0), condition: ls[0]?.condition || '', note: ls.map((l) => l.note).filter(Boolean).join('; ') }
   })
 
-  if (loading) return <div className="p-8 text-gray-400">Đang tải...</div>
-  if (!device) return null
-
-  const activeAssignment = assignments.find(a => a.is_active)
-
   return (
-    <div className="p-8 max-w-4xl">
-
-      {/* ===== MODAL XÓA ===== */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full">
-            <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
-              <Trash2 size={22} className="text-red-400" />
-            </div>
-            <h3 className="font-semibold text-lg mb-2">Xóa thiết bị?</h3>
-            <p className="text-gray-400 text-sm mb-1">Bạn sắp xóa <span className="text-white font-medium">{device.brand} {device.model}</span></p>
-            <p className="text-gray-500 text-xs mb-5">Thao tác này không thể hoàn tác.</p>
-            {deleteError && <p className="text-red-400 text-sm mb-4 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{deleteError}</p>}
-            <div className="flex gap-3">
-              <button onClick={handleDelete} disabled={deleting}
-                className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 py-2.5 rounded-lg text-sm font-medium transition-colors">
-                {deleting ? 'Đang xóa...' : 'Xóa thiết bị'}
-              </button>
-              <button onClick={() => { setShowDeleteModal(false); setDeleteError('') }}
-                className="flex-1 border border-gray-700 hover:border-gray-500 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition-colors">
-                Hủy
-              </button>
-            </div>
+    <div className="p-6 lg:p-8 max-w-6xl pb-28">
+      <div className="flex items-center gap-4 mb-6">
+        <Link href="/dashboard/devices" className="text-gray-400 hover:text-white"><ArrowLeft size={20} /></Link>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-bold font-mono">{device.asset_code}</h1>
+            <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${STATUS_COLOR[device.status]}`}>{STATUS_LABEL[device.status]}</span>
           </div>
-        </div>
-      )}
-
-      {/* ===== MODAL THU HỒI ===== */}
-      {showReturnModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full">
-            <div className="w-12 h-12 bg-orange-500/20 rounded-full flex items-center justify-center mb-4">
-              <RotateCcw size={22} className="text-orange-400" />
-            </div>
-            <h3 className="font-semibold text-lg mb-1">Thu hồi thiết bị</h3>
-            <p className="text-gray-400 text-sm mb-4">
-              Thu hồi <span className="text-white font-medium">{device.brand} {device.model}</span> từ{' '}
-              <span className="text-white font-medium">{activeAssignment?.employee?.full_name}</span>
-            </p>
-
-            <div className="mb-4">
-              <label className="block text-xs text-gray-400 mb-2">Trạng thái sau khi thu hồi</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setReturnStatus('in_stock')}
-                  className={`py-2.5 rounded-lg text-sm font-medium border transition-colors ${returnStatus === 'in_stock' ? 'bg-blue-600 border-blue-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}>
-                  Nhập kho
-                </button>
-                <button onClick={() => setReturnStatus('broken')}
-                  className={`py-2.5 rounded-lg text-sm font-medium border transition-colors ${returnStatus === 'broken' ? 'bg-red-600 border-red-500 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}>
-                  Hỏng / Bảo trì
-                </button>
-              </div>
-            </div>
-
-            <div className="mb-5">
-              <label className="block text-xs text-gray-400 mb-1.5">Ghi chú (tùy chọn)</label>
-              <textarea value={returnNotes} onChange={e => setReturnNotes(e.target.value)}
-                placeholder="Lý do thu hồi, tình trạng thiết bị..."
-                rows={2}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 resize-none" />
-            </div>
-
-            {returnError && <p className="text-red-400 text-sm mb-4 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{returnError}</p>}
-            <div className="flex gap-3">
-              <button onClick={handleReturn} disabled={returning}
-                className="flex-1 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 py-2.5 rounded-lg text-sm font-medium transition-colors">
-                {returning ? 'Đang thu hồi...' : 'Xác nhận thu hồi'}
-              </button>
-              <button onClick={() => { setShowReturnModal(false); setReturnError('') }}
-                className="flex-1 border border-gray-700 hover:border-gray-500 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition-colors">
-                Hủy
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== MODAL LUÂN CHUYỂN ===== */}
-      {showTransferModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full">
-            <div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mb-4">
-              <ArrowRightLeft size={22} className="text-blue-400" />
-            </div>
-            <h3 className="font-semibold text-lg mb-1">Luân chuyển thiết bị</h3>
-            <p className="text-gray-400 text-sm mb-4">
-              Chuyển <span className="text-white font-medium">{device.brand} {device.model}</span>
-              {activeAssignment?.employee && (
-                <> từ <span className="text-orange-400 font-medium">{activeAssignment.employee.full_name}</span></>
-              )}
-              {' '}sang nhân viên mới
-            </p>
-
-            {/* Tìm nhân viên */}
-            <div className="relative mb-3">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input type="text" placeholder="Tìm tên hoặc mã nhân viên..."
-                value={empSearch} onChange={e => setEmpSearch(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
-            </div>
-
-            {/* Danh sách nhân viên */}
-            <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-700 mb-4">
-              {filteredEmps.length === 0 ? (
-                <p className="text-center text-gray-500 text-sm py-6">Không tìm thấy</p>
-              ) : filteredEmps.map(emp => (
-                <button key={emp.id} onClick={() => setSelectedEmp(emp)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-gray-800/50 last:border-0 ${selectedEmp?.id === emp.id ? 'bg-blue-600/20 text-white' : 'hover:bg-gray-800 text-gray-300'}`}>
-                  <div className="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center shrink-0 text-blue-400 text-xs font-medium">
-                    {emp.full_name.charAt(0)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{emp.full_name}</div>
-                    <div className="text-xs text-gray-500">{emp.employee_code} · {emp.department?.name}</div>
-                  </div>
-                  {selectedEmp?.id === emp.id && <div className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />}
-                </button>
-              ))}
-            </div>
-
-            {/* Người được chọn */}
-            {selectedEmp && (
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2 mb-3 text-sm text-blue-300">
-                Chuyển đến: <span className="font-medium text-white">{selectedEmp.full_name}</span> ({selectedEmp.employee_code})
-              </div>
-            )}
-
-            <div className="mb-5">
-              <label className="block text-xs text-gray-400 mb-1.5">Ghi chú (tùy chọn)</label>
-              <textarea value={transferNotes} onChange={e => setTransferNotes(e.target.value)}
-                placeholder="Lý do luân chuyển..."
-                rows={2}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none" />
-            </div>
-
-            {transferError && <p className="text-red-400 text-sm mb-4 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{transferError}</p>}
-            <div className="flex gap-3">
-              <button onClick={handleTransfer} disabled={!selectedEmp || transferring}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 py-2.5 rounded-lg text-sm font-medium transition-colors">
-                {transferring ? 'Đang chuyển...' : 'Xác nhận luân chuyển'}
-              </button>
-              <button onClick={() => { setShowTransferModal(false); setTransferError('') }}
-                className="flex-1 border border-gray-700 hover:border-gray-500 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition-colors">
-                Hủy
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== HEADER ===== */}
-      <div className="flex items-center gap-4 mb-8">
-        <Link href="/dashboard/devices" className="text-gray-400 hover:text-white transition-colors">
-          <ArrowLeft size={20} />
-        </Link>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">{device.brand} {device.model}</h1>
-            <span className={`px-2.5 py-1 rounded-lg text-xs font-medium border ${STATUS_COLOR[device.status]}`}>
-              {STATUS_LABEL[device.status]}
-            </span>
-          </div>
-          <p className="text-gray-400 text-sm mt-0.5 font-mono">{device.asset_code}</p>
+          <p className="text-gray-400 text-sm mt-0.5">{deviceName(device)}</p>
         </div>
         {canWrite && (
-          <div className="flex items-center gap-2">
-            {activeAssignment && (
-              <Link href={`/dashboard/devices/${id}/handover`}
-                className="flex items-center gap-2 border border-gray-700 hover:border-gray-500 px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white transition-colors">
-                <Printer size={14} /> In biên bản
-              </Link>
-            )}
-            <Link href={`/dashboard/devices/${id}/edit`}
-              className="flex items-center gap-2 border border-gray-700 hover:border-gray-500 px-4 py-2 rounded-lg text-sm text-gray-300 hover:text-white transition-colors">
-              <Pencil size={14} /> Sửa
-            </Link>
-            <button onClick={() => setShowDeleteModal(true)}
-              className="flex items-center gap-2 border border-red-800/50 hover:border-red-600 px-4 py-2 rounded-lg text-sm text-red-400 hover:text-red-300 transition-colors">
-              <Trash2 size={14} /> Xóa
-            </button>
-          </div>
+          <button onClick={() => setConfirmDel(true)} className="flex items-center gap-2 border border-red-800/50 hover:border-red-600 px-4 py-2 rounded-lg text-sm text-red-400">
+            <Trash2 size={14} /> Xoá
+          </button>
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
-        {/* Left: device info */}
-        <div className="col-span-2 space-y-6">
-          {/* Thông tin cơ bản */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <h2 className="font-semibold mb-4">Thông tin thiết bị</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <InfoRow label="Mã tài sản" value={device.asset_code} mono />
-              <InfoRow label="Serial" value={device.serial_number || '—'} mono />
-              <InfoRow label="Hãng" value={device.brand} />
-              <InfoRow label="Model" value={device.model} />
-              {device.purchase_date && <InfoRow label="Ngày mua" value={new Date(device.purchase_date).toLocaleDateString('vi-VN')} icon={<Calendar size={14} />} />}
-              {device.purchase_price && <InfoRow label="Giá mua" value={device.purchase_price.toLocaleString('vi-VN') + ' ₫'} icon={<DollarSign size={14} />} />}
-              {device.warranty_expiry && (
-                <InfoRow label="Bảo hành đến" value={new Date(device.warranty_expiry).toLocaleDateString('vi-VN')}
-                  icon={<Shield size={14} />}
-                  valueClass={new Date(device.warranty_expiry) < new Date() ? 'text-red-400' : 'text-green-400'} />
-              )}
-            </div>
-            {device.notes && <p className="mt-4 text-sm text-gray-400 bg-gray-800 rounded-lg p-3">{device.notes}</p>}
-          </div>
-
-          {/* Cấu hình Laptop */}
-          {device.category === 'laptop' && device.laptop_specs && (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <h2 className="font-semibold mb-4 flex items-center gap-2"><Cpu size={16} className="text-blue-400" /> Cấu hình</h2>
-              <div className="grid grid-cols-2 gap-4">
-                {device.laptop_specs.cpu && <InfoRow label="CPU" value={device.laptop_specs.cpu} />}
-                {device.laptop_specs.ram && <InfoRow label="RAM" value={device.laptop_specs.ram} />}
-                {device.laptop_specs.storage && <InfoRow label="Ổ cứng" value={device.laptop_specs.storage} icon={<HardDrive size={14} />} />}
-                {device.laptop_specs.display && <InfoRow label="Màn hình" value={device.laptop_specs.display} icon={<Monitor size={14} />} />}
-                {device.laptop_specs.os && <InfoRow label="Hệ điều hành" value={device.laptop_specs.os} />}
-                {device.laptop_specs.gpu && <InfoRow label="GPU" value={device.laptop_specs.gpu} />}
-              </div>
-            </div>
-          )}
-
-          {/* Cấu hình Màn hình */}
-          {device.category === 'monitor' && device.monitor_specs && (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <h2 className="font-semibold mb-4 flex items-center gap-2"><Monitor size={16} className="text-purple-400" /> Thông số màn hình</h2>
-              <div className="grid grid-cols-2 gap-4">
-                {device.monitor_specs.screen_size && <InfoRow label="Kích thước" value={device.monitor_specs.screen_size} />}
-                {device.monitor_specs.resolution && <InfoRow label="Độ phân giải" value={device.monitor_specs.resolution} />}
-                {device.monitor_specs.panel_type && <InfoRow label="Tấm nền" value={device.monitor_specs.panel_type} />}
-                {device.monitor_specs.refresh_rate && <InfoRow label="Tần số quét" value={device.monitor_specs.refresh_rate} />}
-              </div>
-            </div>
-          )}
-
-          {/* Lịch sử cấp phát */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold">Lịch sử cấp phát</h2>
-              {canWrite && (
-                <Link href={`/dashboard/devices/${id}/assign`} className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
-                  + Cấp phát
-                </Link>
-              )}
-            </div>
-            {assignments.length === 0 ? (
-              <p className="text-gray-500 text-sm">Chưa có lịch sử cấp phát</p>
-            ) : (
-              <div className="space-y-3">
-                {assignments.map(a => (
-                  <div key={a.id} className={`flex items-start gap-3 p-3 rounded-lg ${a.is_active ? 'bg-green-500/5 border border-green-500/20' : 'bg-gray-800/50'}`}>
-                    <User size={16} className={a.is_active ? 'text-green-400 mt-0.5' : 'text-gray-500 mt-0.5'} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm">{a.employee?.full_name}</span>
-                        {a.is_active && <span className="text-xs bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded">Hiện tại</span>}
-                      </div>
-                      <div className="text-xs text-gray-400 mt-0.5">
-                        {a.employee?.department?.name} · Cấp: {new Date(a.assigned_date).toLocaleDateString('vi-VN')}
-                        {a.returned_date && ` · Trả: ${new Date(a.returned_date).toLocaleDateString('vi-VN')}`}
-                      </div>
-                      {a.notes && <div className="text-xs text-gray-500 mt-0.5 italic">{a.notes}</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+      {!device.stock_migrated && isAdmin && (
+        <div className="mb-4 text-sm bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-xl px-4 py-3">
+          Thiết bị này chưa chuyển số liệu cũ sang Kho Tổng — đang tạm lấy số lượng cũ ({s.in}) làm Nhập kho. Sẽ đúng hẳn sau khi chạy chuyển dữ liệu.
         </div>
+      )}
 
-        {/* Right: QR + người dùng */}
-        <div className="space-y-6">
-          {/* QR code */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 text-center">
-            <h2 className="font-semibold mb-4 flex items-center justify-center gap-2">
-              <QrCode size={16} className="text-blue-400" /> QR Code
-            </h2>
-            {qrDataUrl ? (
-              <>
-                <img src={qrDataUrl} alt="QR Code" className="mx-auto rounded-lg mb-4" />
-                <a href={qrDataUrl} download={`QR-${device.asset_code}.png`}
-                  className="flex items-center justify-center gap-2 w-full bg-gray-800 hover:bg-gray-700 px-4 py-2.5 rounded-lg text-sm transition-colors">
-                  <Download size={14} /> Tải về để in
-                </a>
-              </>
-            ) : (
-              <div className="w-48 h-48 mx-auto bg-gray-800 rounded-lg animate-pulse" />
-            )}
-            <p className="text-xs text-gray-500 mt-3">Quét để xem thông tin thiết bị</p>
+      {/* ===== Thông tin chung ===== */}
+      <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
+        <div className="flex items-center gap-3 mb-4">
+          <h2 className="font-semibold">Thông tin chung</h2>
+          {canWrite && <span className="text-xs text-gray-500">sửa xong bấm <b>Lưu</b> ở góc dưới</span>}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <Fld label="Mã tài sản"><input className={input + ' font-mono'} disabled={ro} value={f.asset_code} onChange={(e) => set({ asset_code: e.target.value })} /></Fld>
+          <Fld label="Loại">
+            <select className={input} disabled={ro} value={f.category} onChange={(e) => set({ category: e.target.value as DeviceCategory })}>
+              {CATEGORY_ORDER.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
+            </select>
+          </Fld>
+          <Fld label="Hãng"><input className={input} disabled={ro} value={f.brand} onChange={(e) => set({ brand: e.target.value })} /></Fld>
+          <Fld label="Model"><input className={input} disabled={ro} value={f.model} onChange={(e) => set({ model: e.target.value })} /></Fld>
+          <Fld label="Số Seri"><input className={input} disabled={ro} value={f.serial_number} onChange={(e) => set({ serial_number: e.target.value })} /></Fld>
+
+          <Stat label="Nhập kho" v={s.in} hint="cộng từ Lịch sử nhập kho" green />
+          <Stat label="Đã cấp" v={s.out} hint="cộng từ Lịch sử cấp phát" />
+          <Stat label="Thu hồi" v={s.back} hint="cộng từ Lịch sử thu hồi" />
+          <Stat label="Luân chuyển" v={s.move} hint="không làm đổi tồn" />
+          <Stat label="Tồn kho" v={s.left} hint={`= ${s.in} − ${s.out} + ${s.back}`} green />
+
+          <Fld label="Trạng thái">
+            <select className={input} disabled={ro} value={f.status} onChange={(e) => set({ status: e.target.value as DeviceStatus })}>
+              {STATUS_ORDER.map((x) => <option key={x} value={x}>{STATUS_LABEL[x]}</option>)}
+            </select>
+            <p className="text-[11px] text-gray-500 mt-1">Tự đổi khi cấp phát / thu hồi</p>
+          </Fld>
+          <div className="col-span-2">
+            <div className="text-xs text-gray-400 mb-1">Thời gian bảo hành</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><div className="text-[11px] text-gray-500">Từ ngày</div>{ro ? <div className="text-sm py-2">{fmtDate(f.warranty_from)}</div> : <DatePicker value={f.warranty_from} onChange={(v) => set({ warranty_from: v })} />}</div>
+              <div><div className="text-[11px] text-gray-500">Đến ngày</div>{ro ? <div className="text-sm py-2">{fmtDate(f.warranty_expiry)}</div> : <DatePicker value={f.warranty_expiry} onChange={(v) => set({ warranty_expiry: v })} />}</div>
+            </div>
+            <div className="mt-1.5"><WarrantyBadge to={f.warranty_expiry} /></div>
           </div>
-
-          {/* Người đang dùng + nút hành động */}
-          {activeAssignment ? (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <h2 className="font-semibold mb-3 text-sm text-gray-400 uppercase tracking-wide">Đang sử dụng bởi</h2>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-blue-600/20 rounded-full flex items-center justify-center">
-                  <User size={18} className="text-blue-400" />
-                </div>
-                <div>
-                  <div className="font-medium">{activeAssignment.employee?.full_name}</div>
-                  <div className="text-xs text-gray-400">{activeAssignment.employee?.department?.name}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">Từ {new Date(activeAssignment.assigned_date).toLocaleDateString('vi-VN')}</div>
-                </div>
-              </div>
-              {canWrite && (
-                <div className="space-y-2">
-                  <button onClick={openTransferModal}
-                    className="w-full flex items-center justify-center gap-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 hover:text-blue-300 border border-blue-500/30 hover:border-blue-500/50 rounded-lg py-2.5 text-sm font-medium transition-colors">
-                    <ArrowRightLeft size={15} /> Luân chuyển
-                  </button>
-                  <button onClick={() => { setShowReturnModal(true); setReturnError('') }}
-                    className="w-full flex items-center justify-center gap-2 bg-orange-600/10 hover:bg-orange-600/20 text-orange-400 hover:text-orange-300 border border-orange-500/30 hover:border-orange-500/50 rounded-lg py-2.5 text-sm font-medium transition-colors">
-                    <RotateCcw size={15} /> Thu hồi thiết bị
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-              <h2 className="font-semibold mb-2 text-sm text-gray-400 uppercase tracking-wide">Người sử dụng</h2>
-              <p className="text-gray-500 text-sm mb-4">Thiết bị đang trong kho</p>
-              {canWrite && (
-                <Link href={`/dashboard/devices/${id}/assign`}
-                  className="block w-full text-center bg-blue-600 hover:bg-blue-500 text-white rounded-lg py-2.5 text-sm font-medium transition-colors">
-                  + Cấp phát ngay
-                </Link>
-              )}
-            </div>
+          {device.image_url && (
+            <Fld label="Ảnh">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={device.image_url} alt="" className="w-24 h-24 object-cover rounded-lg border border-gray-700" />
+            </Fld>
           )}
         </div>
+      </section>
+
+      {/* ===== Thông số kĩ thuật (riêng theo Loại) ===== */}
+      <section className="bg-gray-900 border border-gray-800 rounded-xl mb-4">
+        <FoldHead open={!!open.specs} onClick={() => toggle('specs')} title="Thông số kĩ thuật"
+          extra={<span className="text-xs px-2 py-0.5 rounded border border-amber-500/40 text-amber-400">riêng theo Loại: {CATEGORY_LABEL[f.category]}</span>}
+          count={`${[...specFields, ...extraSpecs].filter((k) => f.specs[k]).length}/${specFields.length + extraSpecs.length} trường có dữ liệu`} />
+        {open.specs && <div className="px-5 pb-5">{specFields.length || extraSpecs.length ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {[...specFields, ...extraSpecs].map((k) => (
+              <Fld key={k} label={k}>
+                <input className={input} disabled={ro} value={f.specs[k] || ''} onChange={(e) => set({ specs: { ...f.specs, [k]: e.target.value } })} />
+              </Fld>
+            ))}
+          </div>
+        ) : <p className="text-sm text-gray-500">Loại &quot;{CATEGORY_LABEL[f.category]}&quot; chưa có trường thông số (sẽ thêm được ở &quot;Sửa giao diện&quot;).</p>}</div>}
+      </section>
+
+      {/* ===== 4 bảng lịch sử ===== */}
+      {MOVE_ORDER.map((t) => {
+        const rows = rowsOf(t)
+        return (
+          <section key={t} className="bg-gray-900 border border-gray-800 rounded-xl mb-4">
+            <FoldHead open={!!open[t]} onClick={() => toggle(t)} title={MOVE_DEFS[t].history} count={`${rows.length} phiếu`} />
+            {open[t] && <div className="px-5 pb-5"><div className="overflow-x-auto border border-gray-800 rounded-lg">
+              <table className="w-full text-sm min-w-[720px]">
+                <thead>
+                  <tr className="text-left text-xs text-gray-400 border-b border-gray-800 bg-gray-800/30">
+                    <th className="px-3 py-2">Số phiếu</th>
+                    {COLS[t].map(([h]) => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
+                    <th className="px-3 py-2 w-24" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length ? rows.map((r) => (
+                    <tr key={r.m.id} className="border-b border-gray-800/60 last:border-0">
+                      <td className="px-3 py-2 font-mono text-xs text-blue-300 whitespace-nowrap">{r.m.so || <span className="text-gray-500">dữ liệu cũ</span>}</td>
+                      {COLS[t].map(([h, get]) => <td key={h} className="px-3 py-2">{get(r) || <span className="text-gray-600">—</span>}</td>)}
+                      <td className="px-3 py-2 whitespace-nowrap text-right">
+                        <button title="In lại phiếu" onClick={() => setPreview(r.m)} className="text-gray-400 hover:text-white p-1"><Printer size={14} /></button>
+                        {isAdmin && <button title="Xoá phiếu (Admin)" onClick={() => removeMove(r.m)} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14} /></button>}
+                      </td>
+                    </tr>
+                  )) : <tr><td colSpan={COLS[t].length + 2} className="px-3 py-5 text-center text-gray-500 text-sm">Chưa có dòng nào</td></tr>}
+                </tbody>
+              </table>
+            </div></div>}
+          </section>
+        )
+      })}
+
+      <div className="grid md:grid-cols-3 gap-5">
+        {/* ===== Đang giữ thiết bị ===== */}
+        <section className="md:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div className="flex items-center gap-3 mb-3">
+            <h2 className="font-semibold">Đang giữ thiết bị</h2>
+            <span className="text-xs px-2 py-0.5 rounded border border-gray-700 text-gray-400">tự động</span>
+            <span className="text-xs text-gray-500">= Cấp phát − Thu hồi ± Luân chuyển, theo từng người</span>
+          </div>
+          {holders.length ? (
+            <div className="flex flex-wrap gap-2">
+              {holders.map((h) => (
+                <div key={h.key} className="flex items-center gap-2 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                  <User size={14} className="text-blue-400" /> {h.name}{h.pb && <span className="text-gray-500 text-xs">· {h.pb}</span>}
+                  <b className="font-mono text-green-400">{h.qty}</b>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-sm text-gray-500">Chưa ai giữ — tất cả đang ở kho</p>}
+        </section>
+
+        {/* ===== QR ===== */}
+        <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center">
+          <h2 className="font-semibold mb-3 flex items-center justify-center gap-2"><QrCode size={16} className="text-blue-400" /> QR Code</h2>
+          {qr ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qr} alt="QR" className="mx-auto rounded-lg mb-3 w-40" />
+              <a href={qr} download={`QR-${device.asset_code}.png`} className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg text-sm">
+                <Download size={14} /> Tải về để in
+              </a>
+            </>
+          ) : <div className="w-40 h-40 mx-auto bg-gray-800 rounded-lg animate-pulse" />}
+        </section>
       </div>
+
+      {/* ===== Thanh Lưu (chỉ hiện khi có thay đổi) ===== */}
+      {(dirty || msg) && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-gray-800 border border-amber-500/60 rounded-xl px-4 py-2.5 shadow-2xl">
+          {msg ? <span className={`text-sm ${msg.ok ? 'text-green-400' : 'text-red-400'}`}>{msg.text}</span> : <span className="text-sm text-amber-300">● Có thay đổi <b>chưa lưu</b></span>}
+          {dirty && (
+            <>
+              <button onClick={() => { setForm(toForm(device)); setMsg(null) }} className="flex items-center gap-1.5 border border-gray-600 hover:border-gray-400 px-3 py-1.5 rounded-lg text-sm"><Undo2 size={14} /> Huỷ thay đổi</button>
+              <button onClick={save} disabled={saving} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-3 py-1.5 rounded-lg text-sm font-medium"><Save size={14} /> {saving ? 'Đang lưu…' : 'Lưu'}</button>
+            </>
+          )}
+        </div>
+      )}
+
+      {preview && <PrintPreview move={preview} onClose={() => setPreview(null)} />}
+
+      {confirmDel && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full">
+            <h3 className="font-semibold text-lg mb-2">Xoá thiết bị {device.asset_code}?</h3>
+            <p className="text-gray-400 text-sm mb-5">Chỉ xoá được khi thiết bị chưa có phiếu nào. Thao tác không hoàn tác được.</p>
+            <div className="flex gap-3">
+              <button onClick={removeDevice} className="flex-1 bg-red-600 hover:bg-red-500 py-2.5 rounded-lg text-sm font-medium">Xoá</button>
+              <button onClick={() => setConfirmDel(false)} className="flex-1 border border-gray-700 py-2.5 rounded-lg text-sm text-gray-300">Huỷ</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function InfoRow({ label, value, mono, icon, valueClass }: { label: string; value: string; mono?: boolean; icon?: React.ReactNode; valueClass?: string }) {
+// Tiêu đề khối thu gọn / xổ ra
+function FoldHead({ open, onClick, title, count, extra }: { open: boolean; onClick: () => void; title: string; count: string; extra?: React.ReactNode }) {
   return (
-    <div>
-      <div className="text-xs text-gray-500 mb-0.5">{label}</div>
-      <div className={`text-sm flex items-center gap-1.5 ${mono ? 'font-mono' : ''} ${valueClass || 'text-white'}`}>
-        {icon} {value}
-      </div>
+    <button type="button" onClick={onClick} className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-gray-800/30 rounded-xl">
+      <ChevronRight size={16} className={`text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`} />
+      <h2 className="font-semibold">{title}</h2>
+      {extra}
+      <span className="text-xs text-gray-500">{count}</span>
+      <span className="flex-1" />
+      <span className="text-xs text-gray-500">{open ? 'Thu gọn' : 'Bấm để xem'}</span>
+    </button>
+  )
+}
+
+function Fld({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><div className="text-xs text-gray-400 mb-1">{label}</div>{children}</div>
+}
+function Stat({ label, v, hint, green }: { label: string; v: number; hint: string; green?: boolean }) {
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${green ? 'border-green-500/30' : 'border-gray-700'} bg-gray-800/40`}>
+      <div className="text-xs text-gray-400">{label}</div>
+      <div className={`text-xl font-bold font-mono ${v < 0 ? 'text-red-400' : green ? 'text-green-400' : ''}`}>{v}</div>
+      <div className="text-[11px] text-gray-500">tự tính: {hint}</div>
     </div>
   )
 }

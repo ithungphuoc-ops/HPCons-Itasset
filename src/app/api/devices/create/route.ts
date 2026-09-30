@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createDevice, findDeviceByAssetCode, toDeviceJson } from '@/lib/firestore/devices'
 import { requireWriteAccess } from '@/lib/session'
+import { CATEGORY_ORDER } from '@/lib/kho/config'
 
+// Thêm mã mới vào Danh mục thiết bị (5 cột Sếp chốt: Mã tài sản · Loại · Hãng · Model · Số Seri).
+// Tồn = 0 khi tạo; số lượng vào kho qua phiếu Nhập kho.
 export async function POST(req: NextRequest) {
   try {
     await requireWriteAccess()
@@ -10,37 +13,26 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const {
-    asset_code, category, brand, model,
-    serial_number, purchase_date, purchase_price,
-    warranty_expiry, notes, laptopSpecs, monitorSpecs, pcSpecs,
-  } = body
+  const assetCode = String(body.asset_code || '').trim()
+  const brand = String(body.brand || '').trim()
+  const model = String(body.model || '').trim()
+  const category = body.category
 
-  if (!asset_code || !category || !brand || !model) {
-    return NextResponse.json({ error: 'Thiếu thông tin bắt buộc' }, { status: 400 })
+  if (!assetCode || !CATEGORY_ORDER.includes(category)) {
+    return NextResponse.json({ error: 'Cần nhập Mã tài sản và chọn Loại' }, { status: 400 })
   }
-
-  if (await findDeviceByAssetCode(asset_code)) {
-    return NextResponse.json({ error: `Mã tài sản "${asset_code}" đã tồn tại` }, { status: 400 })
+  if (await findDeviceByAssetCode(assetCode)) {
+    return NextResponse.json({ error: `Mã tài sản "${assetCode}" đã có trong danh mục` }, { status: 400 })
   }
-
-  const hasValue = (specs: Record<string, unknown> | undefined) =>
-    !!specs && Object.values(specs).some((v) => v)
 
   const device = await createDevice({
-    assetCode: asset_code,
+    assetCode,
     category,
     brand,
     model,
-    serialNumber: serial_number || null,
-    purchaseDate: purchase_date || null,
-    purchasePrice: purchase_price ? parseInt(purchase_price) : null,
-    warrantyExpiry: warranty_expiry || null,
-    notes: notes || null,
+    serialNumber: String(body.serial_number || '').trim() || null,
     status: 'in_stock',
-    laptopSpecs: hasValue(laptopSpecs) ? laptopSpecs : hasValue(pcSpecs) ? pcSpecs : null,
-    monitorSpecs: hasValue(monitorSpecs) ? monitorSpecs : null,
+    quantity: 0,
   })
-
   return NextResponse.json({ data: toDeviceJson(device) })
 }

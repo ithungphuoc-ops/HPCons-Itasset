@@ -2,6 +2,22 @@ import "server-only";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
 import type { FirestoreDevice, LaptopSpecs, MonitorSpecs } from "@/lib/firestore/types";
+import { LEGACY_SPEC_MAP, stockHeld, stockLeft } from "@/lib/kho/config";
+
+// Số tồn (xem FirestoreDevice.stock). Viết lại ở đây thay vì import moves.ts để tránh vòng import.
+function stockOf(d: FirestoreDevice) {
+  const s = d.stock;
+  return s ? { in: s.in || 0, out: s.out || 0, back: s.back || 0, move: s.move || 0 } : { in: d.quantity || 0, out: 0, back: 0, move: 0 };
+}
+
+// Thông số: ưu tiên `specs` mới; thiếu thì đọc từ laptopSpecs/monitorSpecs cũ theo LEGACY_SPEC_MAP
+export function specsOf(d: FirestoreDevice): Record<string, string> {
+  const out: Record<string, string> = {};
+  const legacy = (d.category === "monitor" ? d.monitorSpecs : d.laptopSpecs) as Record<string, unknown> | null;
+  const map = LEGACY_SPEC_MAP[d.category] || {};
+  if (legacy) for (const [k, label] of Object.entries(map)) { const v = legacy[k]; if (typeof v === "string" && v) out[label] = v; }
+  return { ...out, ...(d.specs || {}) };
+}
 
 const collection = () => adminDb.collection("devices");
 export const TAG_DEVICES = "itasset-devices";
@@ -30,6 +46,11 @@ export function toDeviceJson(device: FirestoreDevice) {
       ? { ...device.laptopSpecs, main_board: device.laptopSpecs.mainBoard, power_supply: device.laptopSpecs.powerSupply }
       : null,
     monitor_specs: device.monitorSpecs,
+    // ---- Kho Tổng ----
+    specs: specsOf(device),
+    warranty_from: device.warrantyFrom ?? null,
+    stock: { ...stockOf(device), left: stockLeft(stockOf(device)), held: stockHeld(stockOf(device)) },
+    stock_migrated: !!device.stock,
   };
 }
 
@@ -84,6 +105,8 @@ export interface CreateDeviceInput {
   quantity?: number;
   laptopSpecs?: LaptopSpecs | null;
   monitorSpecs?: MonitorSpecs | null;
+  specs?: Record<string, string> | null;
+  warrantyFrom?: string | null;
 }
 
 export async function createDevice(input: CreateDeviceInput): Promise<FirestoreDevice> {
@@ -107,6 +130,10 @@ export async function createDevice(input: CreateDeviceInput): Promise<FirestoreD
     updatedAt: now,
     laptopSpecs: input.laptopSpecs ?? null,
     monitorSpecs: input.monitorSpecs ?? null,
+    specs: input.specs ?? null,
+    warrantyFrom: input.warrantyFrom ?? null,
+    // Thiết bị mới tạo có tồn 0 — số lượng vào kho qua phiếu Nhập kho (Kho Tổng, 30/09/2026)
+    stock: { in: 0, out: 0, back: 0, move: 0 },
   };
   const ref = await collection().add(device);
   revalidateTag(TAG_DEVICES, { expire: 0 });
@@ -114,6 +141,9 @@ export async function createDevice(input: CreateDeviceInput): Promise<FirestoreD
 }
 
 export interface UpdateDeviceInput {
+  assetCode?: string;
+  specs?: Record<string, string>;
+  warrantyFrom?: string | null;
   category?: FirestoreDevice["category"];
   brand?: string;
   model?: string;

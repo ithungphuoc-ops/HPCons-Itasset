@@ -1,9 +1,9 @@
 import { notFound } from 'next/navigation'
-import { Laptop, Monitor, Cpu, Package, User, Calendar, CheckCircle, AlertTriangle, ArrowRight, Printer } from 'lucide-react'
-import Link from 'next/link'
+import { Laptop, Monitor, Cpu, Package, User, Calendar, CheckCircle, AlertTriangle, Printer } from 'lucide-react'
 import { getDeviceById, findDeviceByQrCode, findDeviceByAssetCode, toDeviceJson } from '@/lib/firestore/devices'
-import { getActiveAssignmentForDevice } from '@/lib/firestore/assignments'
-import { getEmployeeById, toEmployeeJson } from '@/lib/firestore/employees'
+import { listMovesForDevice } from '@/lib/firestore/moves'
+import { computeHolders } from '@/lib/kho/holders'
+import { SPEC_FIELDS, fmtDate } from '@/lib/kho/config'
 
 const CATEGORY_LABEL: Record<string, string> = {
   laptop: 'Laptop', monitor: 'Màn hình', pc: 'PC / Máy tính để bàn',
@@ -22,11 +22,8 @@ export default async function PublicDevicePage({ params }: { params: Promise<{ q
   if (!found) notFound()
 
   const device = toDeviceJson(found)
-  const activeAssignmentDoc = await getActiveAssignmentForDevice(found.id)
-  const employeeDoc = activeAssignmentDoc ? await getEmployeeById(activeAssignmentDoc.employeeId) : null
-  const activeAssignment = activeAssignmentDoc && employeeDoc
-    ? { assigned_date: activeAssignmentDoc.assignedDate, employee: await toEmployeeJson(employeeDoc) }
-    : null
+  // Người đang giữ — Kho Tổng (30/09/2026): tính từ phiếu Cấp phát / Thu hồi / Luân chuyển
+  const holders = computeHolders(await listMovesForDevice(found.id)).filter((x) => x.qty > 0)
 
   const Icon = CATEGORY_ICON[device.category as string] || Package
   const statusColor = {
@@ -38,13 +35,8 @@ export default async function PublicDevicePage({ params }: { params: Promise<{ q
   const statusLabel = { in_use: 'Đang sử dụng', in_stock: 'Trong kho', broken: 'Hỏng', liquidated: 'Thanh lý' }[device.status as string] || ''
   const warrantyExpired = device.warranty_expiry && new Date(device.warranty_expiry) < new Date()
 
-  const employee = activeAssignment?.employee as Record<string, unknown> | null
-  const dept = employee?.department as { name: string } | null
-  const laptopSpecs = device.laptop_specs as Record<string, string> | null
-  const monitorSpecs = device.monitor_specs as Record<string, string> | null
-  const isPC = device.category === 'pc'
-  const isLaptop = device.category === 'laptop'
-  const isMonitor = device.category === 'monitor'
+  const specs = (device.specs || {}) as Record<string, string>
+  const specFields = (SPEC_FIELDS[found.category] || Object.keys(specs)).filter((k) => specs[k])
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -64,37 +56,28 @@ export default async function PublicDevicePage({ params }: { params: Promise<{ q
           </span>
         </div>
 
-        {/* Người đang dùng */}
-        {employee ? (
-          <Link href={`/employee/${employee.employee_code}`}
-            className="block bg-gray-900 border border-gray-800 hover:border-blue-500/40 rounded-xl p-5 mb-4 transition-colors group">
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Đang sử dụng bởi</div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-600/20 rounded-full flex items-center justify-center shrink-0">
-                <User size={18} className="text-blue-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-white">{String(employee.full_name)}</div>
-                <div className="text-sm text-gray-400">{dept?.name}</div>
-                {activeAssignment?.assigned_date && (
-                  <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
-                    <Calendar size={11} />
-                    Nhận từ {new Date(activeAssignment.assigned_date).toLocaleDateString('vi-VN')}
+        {/* Người đang giữ */}
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
+          <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">{holders.length ? 'Đang sử dụng bởi' : 'Người sử dụng'}</div>
+          {holders.length ? (
+            <div className="space-y-3">
+              {holders.map((x) => (
+                <div key={x.key} className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-600/20 rounded-full flex items-center justify-center shrink-0">
+                    <User size={18} className="text-blue-400" />
                   </div>
-                )}
-              </div>
-              <div className="text-blue-400 group-hover:translate-x-1 transition-transform">
-                <ArrowRight size={16} />
-              </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-white">{x.name}{x.qty > 1 ? <span className="text-gray-400 font-normal"> · {x.qty} cái</span> : null}</div>
+                    {x.pb && <div className="text-sm text-gray-400">{x.pb}</div>}
+                    <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1"><Calendar size={11} /> Nhận từ {fmtDate(x.since)}</div>
+                  </div>
+                </div>
+              ))}
             </div>
-            <p className="text-xs text-blue-400/60 mt-3">↗ Nhấn để xem tất cả thiết bị của người này</p>
-          </Link>
-        ) : (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Người sử dụng</div>
+          ) : (
             <p className="text-gray-400 text-sm">Thiết bị đang trong kho, chưa cấp phát</p>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Thông tin chung */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
@@ -114,46 +97,11 @@ export default async function PublicDevicePage({ params }: { params: Promise<{ q
           </div>
         </div>
 
-        {/* PC Specs */}
-        {isPC && laptopSpecs && (
+        {specFields.length > 0 && (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Cấu hình PC</div>
+            <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Thông số kĩ thuật</div>
             <div className="space-y-2.5">
-              {laptopSpecs.cpu && <SpecRow icon="🖥" label="CPU" value={laptopSpecs.cpu} />}
-              {laptopSpecs.ram && <SpecRow icon="💾" label="RAM" value={laptopSpecs.ram} />}
-              {laptopSpecs.gpu && <SpecRow icon="🎮" label="GPU / VGA" value={laptopSpecs.gpu} />}
-              {laptopSpecs.storage && <SpecRow icon="💿" label="Ổ cứng" value={laptopSpecs.storage} />}
-              {laptopSpecs.main_board && <SpecRow icon="🔧" label="Main" value={laptopSpecs.main_board} />}
-              {laptopSpecs.power_supply && <SpecRow icon="⚡" label="Nguồn" value={laptopSpecs.power_supply} />}
-              {laptopSpecs.os && <SpecRow icon="🪟" label="HĐH" value={laptopSpecs.os} />}
-            </div>
-          </div>
-        )}
-
-        {/* Laptop Specs */}
-        {isLaptop && laptopSpecs && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Cấu hình Laptop</div>
-            <div className="space-y-2.5">
-              {laptopSpecs.cpu && <SpecRow icon="🖥" label="CPU" value={laptopSpecs.cpu} />}
-              {laptopSpecs.ram && <SpecRow icon="💾" label="RAM" value={laptopSpecs.ram} />}
-              {laptopSpecs.gpu && <SpecRow icon="🎮" label="GPU" value={laptopSpecs.gpu} />}
-              {laptopSpecs.storage && <SpecRow icon="💿" label="Ổ cứng" value={laptopSpecs.storage} />}
-              {laptopSpecs.display && <SpecRow icon="📺" label="Màn hình" value={laptopSpecs.display} />}
-              {laptopSpecs.os && <SpecRow icon="🪟" label="HĐH" value={laptopSpecs.os} />}
-            </div>
-          </div>
-        )}
-
-        {/* Monitor Specs */}
-        {isMonitor && monitorSpecs && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Thông số màn hình</div>
-            <div className="space-y-2.5">
-              {monitorSpecs.screen_size && <SpecRow icon="📐" label="Kích thước" value={monitorSpecs.screen_size} />}
-              {monitorSpecs.resolution && <SpecRow icon="🔍" label="Độ phân giải" value={monitorSpecs.resolution} />}
-              {monitorSpecs.panel_type && <SpecRow icon="🎨" label="Tấm nền" value={monitorSpecs.panel_type} />}
-              {monitorSpecs.refresh_rate && <SpecRow icon="⚡" label="Tần số quét" value={monitorSpecs.refresh_rate} />}
+              {specFields.map((k) => <Row key={k} label={k} value={specs[k]} />)}
             </div>
           </div>
         )}
@@ -165,7 +113,7 @@ export default async function PublicDevicePage({ params }: { params: Promise<{ q
           </div>
         )}
 
-        <p className="text-center text-xs text-gray-600 mt-6">ITAsset · HPCONS</p>
+        <p className="text-center text-xs text-gray-600 mt-6">Kho Tổng · HP CONS</p>
       </div>
     </div>
   )
@@ -180,16 +128,6 @@ function Row({ label, value, mono, valueClass, suffix }: {
       <span className={`text-sm text-right ${mono ? 'font-mono text-xs' : ''} ${valueClass || 'text-white'}`}>
         {value}{suffix && <span className="text-xs text-gray-500">{suffix}</span>}
       </span>
-    </div>
-  )
-}
-
-function SpecRow({ icon, label, value }: { icon: string; label: string; value: string }) {
-  return (
-    <div className="flex items-start gap-3">
-      <span className="text-base leading-none mt-0.5">{icon}</span>
-      <span className="text-sm text-gray-400 w-20 shrink-0">{label}</span>
-      <span className="text-sm text-white font-medium flex-1">{value}</span>
     </div>
   )
 }

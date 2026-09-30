@@ -63,7 +63,7 @@ export default function MyDevicesPage() {
           </div>
           <div>
             <p className="font-semibold text-sm">Thiết bị của tôi</p>
-            <p className="text-xs text-gray-400">HPCONS IT Asset</p>
+            <p className="text-xs text-gray-400">Kho Tổng · HP CONS</p>
           </div>
         </a>
         <div className="flex items-center gap-3">

@@ -74,6 +74,43 @@ export interface FirestoreDevice {
   updatedAt: string;
   laptopSpecs: LaptopSpecs | null;
   monitorSpecs: MonitorSpecs | null;
+  // ---- Kho Tổng (30/09/2026) ----
+  // Thông số kĩ thuật theo tên trường Sếp thiết kế (xem lib/kho/config.ts::SPEC_FIELDS)
+  specs?: Record<string, string> | null;
+  // Bảo hành dạng khoảng: warrantyFrom → warrantyExpiry (giữ tên cũ cho ngày kết thúc)
+  warrantyFrom?: string | null;
+  // Số tổng cộng dồn, cập nhật trong CÙNG transaction với phiếu (lib/firestore/moves.ts) để trang
+  // danh sách chỉ cần đọc bảng devices — không phải cộng lại từ lịch sử (tiết kiệm lượt đọc).
+  // Thiếu (thiết bị chưa chuyển dữ liệu cũ) → coi như { in: quantity, out: 0, back: 0, move: 0 }.
+  stock?: { in: number; out: number; back: number; move: number } | null;
+}
+
+// stock_moves/{id} — 1 PHIẾU nhập kho / cấp phát (xuất kho) / thu hồi / luân chuyển, gồm nhiều
+// dòng thiết bị. Tên người + phòng ban GÕ TAY (Sếp chốt 30/09 — không lấy HPcore cho đỡ tốn đọc).
+export type MoveType = "NK" | "XK" | "TH" | "LC";
+export interface MoveLine {
+  deviceId: string;
+  assetCode: string;
+  name: string;          // "Loại · Hãng · Model" chụp lại lúc lập phiếu (in lại vẫn đúng)
+  serial: string | null;
+  qty: number;
+  condition: string;     // Tình trạng
+  note: string | null;
+}
+export interface FirestoreMove {
+  id: string;
+  type: MoveType;
+  so: string | null;     // NK260001… ; null = dữ liệu cũ chuyển sang
+  date: string;          // yyyy-mm-dd (người dùng chọn)
+  info: Partial<Record<"ncc" | "nguoi" | "pb" | "nguoi2" | "pb2" | "lydo" | "dien", string>>;
+  dnSo: string | null;   // Theo đề nghị số
+  dnDate: string | null;
+  lines: MoveLine[];
+  deviceIds: string[];   // để query array-contains khi mở chi tiết 1 thiết bị
+  people: string[];      // tên người đã chuẩn hoá (bỏ dấu) — cho "Thiết bị của tôi"
+  createdAt: string;
+  createdBy: string | null;
+  legacy?: boolean;      // true = chuyển từ assignments cũ
 }
 
 export interface FirestoreAssignment {
