@@ -3,12 +3,10 @@ import { Laptop, Monitor, Cpu, Package, User, Calendar, CheckCircle, AlertTriang
 import { getDeviceById, findDeviceByQrCode, findDeviceByAssetCode, toDeviceJson } from '@/lib/firestore/devices'
 import { listMovesForDevice } from '@/lib/firestore/moves'
 import { computeHolders } from '@/lib/kho/holders'
-import { SPEC_FIELDS, fmtDate } from '@/lib/kho/config'
+import { fmtDate } from '@/lib/kho/config'
+import { getKhoSettings } from '@/lib/firestore/settings'
+import { catLabel, specFieldsOf } from '@/lib/kho/settings'
 
-const CATEGORY_LABEL: Record<string, string> = {
-  laptop: 'Laptop', monitor: 'Màn hình', pc: 'PC / Máy tính để bàn',
-  peripheral: 'Phụ kiện', printer: 'Máy in', other: 'Thiết bị khác',
-}
 const CATEGORY_ICON: Record<string, React.ElementType> = {
   laptop: Laptop, monitor: Monitor, pc: Cpu,
   peripheral: Package, printer: Printer, other: Package,
@@ -36,7 +34,10 @@ export default async function PublicDevicePage({ params }: { params: Promise<{ q
   const warrantyExpired = device.warranty_expiry && new Date(device.warranty_expiry) < new Date()
 
   const specs = (device.specs || {}) as Record<string, string>
-  const specFields = (SPEC_FIELDS[found.category] || Object.keys(specs)).filter((k) => specs[k])
+  // Tên Loại + trường thông số theo "Sửa giao diện"
+  const settings = await getKhoSettings()
+  const defs = specFieldsOf(settings, found.category)
+  const specFields = (defs.length ? defs : Object.keys(specs).map((k) => ({ key: k, label: k }))).filter((f) => specs[f.key])
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -47,7 +48,7 @@ export default async function PublicDevicePage({ params }: { params: Promise<{ q
           <div className="w-14 h-14 bg-blue-600/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Icon className="text-blue-400" size={28} />
           </div>
-          <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">{CATEGORY_LABEL[device.category as string] || device.category}</p>
+          <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">{catLabel(settings, device.category)}</p>
           <h1 className="text-2xl font-bold">{device.brand} {device.model}</h1>
           <p className="text-gray-400 font-mono text-sm mt-1">{device.asset_code}</p>
           <span className={`inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full text-xs font-medium border ${statusColor}`}>
@@ -101,7 +102,7 @@ export default async function PublicDevicePage({ params }: { params: Promise<{ q
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
             <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Thông số kĩ thuật</div>
             <div className="space-y-2.5">
-              {specFields.map((k) => <Row key={k} label={k} value={specs[k]} />)}
+              {specFields.map((f) => <Row key={f.key} label={f.label} value={specs[f.key]} />)}
             </div>
           </div>
         )}

@@ -5,6 +5,8 @@ import { ArrowLeft, Mail, Phone, Building2, Laptop, Monitor, Cpu, Package, Calen
 import Link from 'next/link'
 import { useRole } from '@/lib/hooks/useRole'
 import { reportActivity } from '@/lib/reportActivity'
+import { useKhoSettings } from '@/lib/kho/useKhoSettings'
+import { catLabel } from '@/lib/kho/settings'
 
 
 interface Employee {
@@ -21,9 +23,6 @@ interface Assignment {
 const CATEGORY_ICON: Record<string, React.ElementType> = {
   laptop: Laptop, monitor: Monitor, pc: Cpu, peripheral: Package, other: Package,
 }
-const CATEGORY_LABEL: Record<string, string> = {
-  laptop: 'Laptop', monitor: 'Màn hình', pc: 'PC', peripheral: 'Phụ kiện', other: 'Khác',
-}
 
 export default function EmployeeDetailPage() {
   const { id } = useParams()
@@ -39,6 +38,7 @@ export default function EmployeeDetailPage() {
   const [form, setForm] = useState({ full_name: '', employee_code: '', email: '', phone: '', department_id: '' })
   const [error, setError] = useState('')
   const { canWrite } = useRole()
+  const { settings: KS } = useKhoSettings()
 
   useEffect(() => {
     async function load() {
@@ -272,7 +272,7 @@ export default function EmployeeDetailPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm group-hover:text-blue-400 transition-colors">{a.device.brand} {a.device.model}</div>
-                    <div className="text-xs text-gray-500">{CATEGORY_LABEL[a.device.category]} · {a.device.asset_code}</div>
+                    <div className="text-xs text-gray-500">{catLabel(KS, a.device.category)} · {a.device.asset_code}</div>
                   </div>
                   <div className="text-xs text-gray-500 flex items-center gap-1 shrink-0">
                     <Calendar size={11} />

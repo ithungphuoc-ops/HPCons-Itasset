@@ -3,7 +3,7 @@
 // Đợt 2 ("Sửa giao diện") sẽ cho Admin sửa các danh sách này và lưu Firestore; lúc đó các hằng
 // dưới đây trở thành giá trị MẶC ĐỊNH khi chưa có cấu hình lưu.
 
-import type { DeviceCategory, DeviceStatus } from '@/lib/types'
+import type { BuiltinCategory, DeviceCategory, DeviceStatus } from '@/lib/types'
 
 export const APP_NAME = 'Kho Tổng'
 
@@ -16,8 +16,8 @@ export const KHO_LIST: KhoInfo[] = [
 ]
 
 // Thứ tự theo thiết kế Sếp (Laptop / PC / Màn hình / ...), mã giữ nguyên enum cũ để không phải đổi dữ liệu
-export const CATEGORY_ORDER: DeviceCategory[] = ['laptop', 'pc', 'monitor', 'printer', 'networking', 'component', 'ups', 'peripheral', 'other']
-export const CATEGORY_LABEL: Record<DeviceCategory, string> = {
+export const CATEGORY_ORDER: BuiltinCategory[] = ['laptop', 'pc', 'monitor', 'printer', 'networking', 'component', 'ups', 'peripheral', 'other']
+export const CATEGORY_LABEL: Record<BuiltinCategory, string> = {
   laptop: 'Laptop', pc: 'PC', monitor: 'Màn hình', printer: 'Máy in', networking: 'Thiết bị mạng',
   component: 'Linh kiện', ups: 'UPS', peripheral: 'Phụ kiện', other: 'Khác',
 }
@@ -34,7 +34,7 @@ export const STATUS_COLOR: Record<DeviceStatus, string> = {
 }
 
 // Thông số kĩ thuật RIÊNG theo Loại — đúng danh sách trường Sếp đã tự thiết kế
-export const SPEC_FIELDS: Partial<Record<DeviceCategory, string[]>> = {
+export const SPEC_FIELDS: Partial<Record<BuiltinCategory, string[]>> = {
   monitor: ['Màu', 'Độ sáng', 'Màu sắc hiển thị', 'Loại màn hình', 'Kích cỡ màn hình', 'Tấm nền', 'Góc nhìn',
     'Tốc độ phản hồi', 'sRGB', 'Cổng kết nối', 'Tỉ lệ khung hình', 'Tần số quét', 'Độ phân giải', 'Góc xoay',
     'Đế treo ARM', 'Kích thước', 'Cân nặng (Sản phẩm/Full)', 'Tính năng đặc biệt'],
@@ -44,7 +44,7 @@ export const SPEC_FIELDS: Partial<Record<DeviceCategory, string[]>> = {
 
 // Dữ liệu cũ (laptopSpecs/monitorSpecs thời Supabase) → tên trường mới, để hiện được ngay khi chưa
 // có `specs` mới. Chỉ dùng để ĐỌC; lần Lưu đầu tiên sẽ ghi sang `specs`.
-export const LEGACY_SPEC_MAP: Partial<Record<DeviceCategory, Record<string, string>>> = {
+export const LEGACY_SPEC_MAP: Partial<Record<string, Record<string, string>>> = {
   laptop: { cpu: 'CPU', ram: 'Ram', storage: 'Ổ cứng', gpu: 'VGA', display: 'Màn hình', os: 'Hệ điều hành' },
   pc: { cpu: 'CPU', mainBoard: 'Main', ram: 'Ram', storage: 'Ổ cứng', gpu: 'VGA', powerSupply: 'Nguồn' },
   monitor: { screenSize: 'Kích cỡ màn hình', resolution: 'Độ phân giải', panelType: 'Tấm nền', refreshRate: 'Tần số quét' },
@@ -125,7 +125,7 @@ export function normalizeVi(s: string): string {
   return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, m => (m === 'đ' ? 'd' : 'D')).toLowerCase().trim().replace(/\s+/g, ' ')
 }
 export function deviceName(d: { category: DeviceCategory; brand?: string | null; model?: string | null }): string {
-  return [CATEGORY_LABEL[d.category] || d.category, d.brand, d.model].filter(Boolean).join(' · ')
+  return [CATEGORY_LABEL[d.category as BuiltinCategory] || d.category, d.brand, d.model].filter(Boolean).join(' · ')
 }
 export function todayIso(): string {
   const d = new Date()

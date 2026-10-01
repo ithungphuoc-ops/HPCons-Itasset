@@ -9,7 +9,8 @@ import {
 import { countMovesForDevice, listMovesForDevice } from '@/lib/firestore/moves'
 import { getActiveAssignmentForDevice } from '@/lib/firestore/assignments'
 import { requireSession, requireWriteAccess } from '@/lib/session'
-import { CATEGORY_ORDER, STATUS_ORDER } from '@/lib/kho/config'
+import { STATUS_ORDER } from '@/lib/kho/config'
+import { getKhoSettings } from '@/lib/firestore/settings'
 import type { DeviceCategory, DeviceStatus } from '@/lib/firestore/types'
 
 // Chi tiết thiết bị + toàn bộ phiếu có thiết bị này (1 query array-contains)
@@ -58,7 +59,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       update.assetCode = code
     }
     if (body.category !== undefined) {
-      if (!CATEGORY_ORDER.includes(body.category)) return NextResponse.json({ error: 'Loại không hợp lệ' }, { status: 400 })
+      const settings = await getKhoSettings()
+      if (!settings.categories.some((c) => c.key === body.category)) return NextResponse.json({ error: 'Loại không hợp lệ' }, { status: 400 })
       update.category = body.category as DeviceCategory
     }
     if (body.status !== undefined) {
@@ -75,10 +77,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.specs !== undefined && body.specs && typeof body.specs === 'object') {
       const specs: Record<string, string> = {}
       for (const [k, v] of Object.entries(body.specs as Record<string, unknown>)) {
+        if (/^__.*__$/.test(k) || !k.trim()) continue // Firestore cấm tên field dạng __x__ (sẽ lỗi 500)
         // Giữ cả ô trống ('') — updateDevice ghi kiểu merge, bỏ key đi thì giá trị cũ sẽ không bị xoá
         specs[String(k).slice(0, 80)] = (str(v) ?? '').slice(0, 300)
       }
       update.specs = specs
+    }
+
+    // Trường bổ sung (Sửa giao diện) — chỉ nhận đúng các key đang cấu hình; giữ cả ô trống để xoá được giá trị cũ
+    if (body.extra !== undefined && body.extra && typeof body.extra === 'object') {
+      const keys = new Set((await getKhoSettings()).extraFields.map((f) => f.key))
+      const extra: Record<string, string> = {}
+      for (const [k, v] of Object.entries(body.extra as Record<string, unknown>)) if (keys.has(k)) extra[k] = (str(v) ?? '').slice(0, 300)
+      update.extra = extra
     }
 
     await updateDevice(id, update)

@@ -2,16 +2,9 @@
 // Route Handler tự map sang shape cũ (snake_case, xem src/lib/types/index.ts)
 // trước khi trả JSON, để giữ nguyên hợp đồng API cho phần còn lại của app.
 
-export type DeviceCategory =
-  | "laptop"
-  | "monitor"
-  | "pc"
-  | "peripheral"
-  | "printer"
-  | "networking"
-  | "component"
-  | "ups"
-  | "other";
+// Mã Loại: 9 loại có sẵn (laptop, monitor, pc, peripheral, printer, networking, component, ups, other)
+// + Loại Admin tự thêm ở "Sửa giao diện" (Đợt 2, 01/10/2026) → chuỗi bất kỳ.
+export type DeviceCategory = string;
 
 export type DeviceStatus = "in_use" | "in_stock" | "broken" | "liquidated";
 
@@ -83,6 +76,8 @@ export interface FirestoreDevice {
   // danh sách chỉ cần đọc bảng devices — không phải cộng lại từ lịch sử (tiết kiệm lượt đọc).
   // Thiếu (thiết bị chưa chuyển dữ liệu cũ) → coi như { in: quantity, out: 0, back: 0, move: 0 }.
   stock?: { in: number; out: number; back: number; move: number } | null;
+  // Trường bổ sung ở Thông tin chung do Admin thêm (Đợt 2) — key = ExtraField.key (lib/kho/settings.ts)
+  extra?: Record<string, string> | null;
 }
 
 // stock_moves/{id} — 1 PHIẾU nhập kho / cấp phát (xuất kho) / thu hồi / luân chuyển, gồm nhiều

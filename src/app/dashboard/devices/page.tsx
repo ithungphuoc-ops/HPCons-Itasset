@@ -2,19 +2,57 @@
 // Danh sách Thiết bị (= Danh mục thiết bị, Sếp chốt gộp 30/09/2026). Cột theo thiết kế:
 // Mã tài sản · Loại · Hãng · Model · Số Seri · Nhập kho · Đã cấp · Tồn kho · Trạng thái · Bảo hành.
 // 4 nút lập phiếu ở đầu trang (1 phiếu nhiều thiết bị) + "Thêm thiết bị" (thêm mã vào danh mục).
+// Đợt 2: tên Loại / tên cột / bật-tắt cột / trường bổ sung theo "Sửa giao diện".
 import { useState, useEffect, useMemo } from 'react'
 import { Search, Plus, QrCode, FileSpreadsheet, Package, X, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { DeviceStatus, DeviceCategory } from '@/lib/types'
 import { useRole } from '@/lib/hooks/useRole'
-import { CATEGORY_LABEL, CATEGORY_ORDER, STATUS_COLOR, STATUS_LABEL, STATUS_ORDER, fmtDate, normalizeVi, type MoveType } from '@/lib/kho/config'
+import { STATUS_COLOR, STATUS_LABEL, STATUS_ORDER, fmtDate, normalizeVi, type MoveType } from '@/lib/kho/config'
+import { catLabel, type KhoSettings, type ListCol } from '@/lib/kho/settings'
+import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 import PhieuModal from '@/components/kho/PhieuModal'
 
 interface Device {
   id: string; asset_code: string; category: DeviceCategory; brand: string; model: string
   serial_number?: string | null; status: DeviceStatus; warranty_from?: string | null; warranty_expiry?: string | null
   stock: { in: number; out: number; back: number; move: number; left: number; held: number }
+  extra?: Record<string, string>
+}
+
+// Cột bật/tắt được — [khoá, tiêu đề, căn phải?, ô]
+function columns(S: KhoSettings): { key: string; head: string; right?: boolean; cell: (d: Device) => React.ReactNode }[] {
+  const L = S.fieldLabels
+  const dash = <span className="text-gray-600">—</span>
+  const base: Record<ListCol, { head: string; right?: boolean; cell: (d: Device) => React.ReactNode }> = {
+    brand: { head: L.brand, cell: (d) => d.brand || dash },
+    model: { head: L.model, cell: (d) => <span className="text-gray-300">{d.model || dash}</span> },
+    serial_number: { head: L.serial_number, cell: (d) => <span className="text-gray-400 font-mono text-xs">{d.serial_number || '—'}</span> },
+    in: { head: 'Nhập kho', right: true, cell: (d) => <span className="font-mono text-gray-300">{d.stock.in}</span> },
+    out: { head: 'Đã cấp', right: true, cell: (d) => <span className="font-mono text-gray-300">{d.stock.out}</span> },
+    back: { head: 'Thu hồi', right: true, cell: (d) => <span className="font-mono text-gray-300">{d.stock.back}</span> },
+    move: { head: 'Luân chuyển', right: true, cell: (d) => <span className="font-mono text-gray-300">{d.stock.move}</span> },
+    left: { head: 'Tồn kho', right: true, cell: (d) => <span className={`font-mono font-semibold ${d.stock.left < 0 ? 'text-red-400' : 'text-green-400'}`}>{d.stock.left}</span> },
+    status: { head: L.status, cell: (d) => <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${STATUS_COLOR[d.status]}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{STATUS_LABEL[d.status]}</span> },
+    warranty: {
+      head: L.warranty, cell: (d) => {
+        if (!d.warranty_expiry) return dash
+        const expired = d.warranty_expiry < new Date().toISOString().slice(0, 10)
+        return <span className={`text-xs whitespace-nowrap ${expired ? 'text-red-400' : 'text-gray-400'}`}>{d.warranty_from ? `${fmtDate(d.warranty_from)} → ` : 'đến '}{fmtDate(d.warranty_expiry)}</span>
+      },
+    },
+  }
+  const order: ListCol[] = ['brand', 'model', 'serial_number', 'in', 'out', 'back', 'move', 'left', 'status', 'warranty']
+  const cols = order.filter((k) => S.listColumns[k]).map((k) => ({ key: k, ...base[k] }))
+  // Trường bổ sung bật "hiện ở danh sách" — chèn trước Trạng thái
+  const extra = S.extraFields.filter((f) => f.inList).map((f) => ({
+    key: 'x_' + f.key, head: f.label,
+    cell: (d: Device) => { const v = d.extra?.[f.key]; return v ? (f.type === 'date' ? fmtDate(v) : v) : dash },
+  }))
+  const at = cols.findIndex((c) => c.key === 'status')
+  if (at < 0) return [...cols, ...extra]
+  return [...cols.slice(0, at), ...extra, ...cols.slice(at)]
 }
 
 const MOVE_BTNS: { t: MoveType; label: string; icon: React.ElementType }[] = [
@@ -26,6 +64,8 @@ const MOVE_BTNS: { t: MoveType; label: string; icon: React.ElementType }[] = [
 
 export default function DevicesPage() {
   const { canWrite } = useRole()
+  const { settings: S } = useKhoSettings()
+  const cols = columns(S)
   const router = useRouter()
   const [allDevices, setAllDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,7 +92,7 @@ export default function DevicesPage() {
         const st = p.get('status') as DeviceStatus | null
         const cat = p.get('category') as DeviceCategory | null
         if (st && STATUS_ORDER.includes(st)) setFilterStatus(st)
-        if (cat && CATEGORY_ORDER.includes(cat)) setFilterCategory(cat)
+        if (cat) setFilterCategory(cat)
       }
     })
     return () => { alive = false }
@@ -119,11 +159,11 @@ export default function DevicesPage() {
             className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
         </div>
         <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value as DeviceCategory | '')} className={sel}>
-          <option value="">Loại: Tất cả</option>
-          {CATEGORY_ORDER.map((k) => <option key={k} value={k}>{CATEGORY_LABEL[k]}</option>)}
+          <option value="">{S.fieldLabels.category}: Tất cả</option>
+          {S.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
         </select>
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as DeviceStatus | '')} className={sel}>
-          <option value="">Trạng thái: Tất cả</option>
+          <option value="">{S.fieldLabels.status}: Tất cả</option>
           {STATUS_ORDER.map((k) => <option key={k} value={k}>{STATUS_LABEL[k]}</option>)}
         </select>
       </div>
@@ -143,25 +183,17 @@ export default function DevicesPage() {
           <thead>
             <tr className="border-b border-gray-800 text-gray-400 text-left">
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={devices.length > 0 && selected.size === devices.length} onChange={toggleAll} className="accent-blue-500 cursor-pointer" /></th>
-              <th className="px-4 py-3 font-medium">Mã tài sản</th>
-              <th className="px-4 py-3 font-medium">Loại</th>
-              <th className="px-4 py-3 font-medium">Hãng</th>
-              <th className="px-4 py-3 font-medium">Model</th>
-              <th className="px-4 py-3 font-medium">Số Seri</th>
-              <th className="px-4 py-3 font-medium text-right">Nhập kho</th>
-              <th className="px-4 py-3 font-medium text-right">Đã cấp</th>
-              <th className="px-4 py-3 font-medium text-right">Tồn kho</th>
-              <th className="px-4 py-3 font-medium">Trạng thái</th>
-              <th className="px-4 py-3 font-medium">Bảo hành</th>
+              <th className="px-4 py-3 font-medium">{S.fieldLabels.asset_code}</th>
+              <th className="px-4 py-3 font-medium">{S.fieldLabels.category}</th>
+              {cols.map((c) => <th key={c.key} className={`px-4 py-3 font-medium whitespace-nowrap ${c.right ? 'text-right' : ''}`}>{c.head}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={11} className="px-4 py-16 text-center text-gray-500">Đang tải...</td></tr>
+              <tr><td colSpan={cols.length + 3} className="px-4 py-16 text-center text-gray-500">Đang tải...</td></tr>
             ) : devices.length === 0 ? (
-              <tr><td colSpan={11} className="px-4 py-16 text-center text-gray-500"><Package size={32} className="mx-auto mb-3 opacity-30" />Không có thiết bị nào khớp</td></tr>
+              <tr><td colSpan={cols.length + 3} className="px-4 py-16 text-center text-gray-500"><Package size={32} className="mx-auto mb-3 opacity-30" />Không có thiết bị nào khớp</td></tr>
             ) : devices.map((d) => {
-              const expired = d.warranty_expiry && d.warranty_expiry < new Date().toISOString().slice(0, 10)
               return (
                 <tr key={d.id} onClick={(e) => { if (!(e.target as HTMLElement).closest('input')) router.push(`/dashboard/devices/${d.id}`) }}
                   className={`border-b border-gray-800/50 hover:bg-gray-800/40 cursor-pointer ${selected.has(d.id) ? 'bg-blue-600/5' : ''}`}>
@@ -169,17 +201,8 @@ export default function DevicesPage() {
                     <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSelect(d.id)} className="accent-blue-500 cursor-pointer" />
                   </td>
                   <td className="px-4 py-3 font-mono text-blue-400"><Link href={`/dashboard/devices/${d.id}`}>{d.asset_code}</Link></td>
-                  <td className="px-4 py-3 text-gray-300">{CATEGORY_LABEL[d.category]}</td>
-                  <td className="px-4 py-3">{d.brand || <span className="text-gray-600">—</span>}</td>
-                  <td className="px-4 py-3 text-gray-300">{d.model || <span className="text-gray-600">—</span>}</td>
-                  <td className="px-4 py-3 text-gray-400 font-mono text-xs">{d.serial_number || '—'}</td>
-                  <td className="px-4 py-3 text-right font-mono text-gray-300">{d.stock.in}</td>
-                  <td className="px-4 py-3 text-right font-mono text-gray-300">{d.stock.out}</td>
-                  <td className={`px-4 py-3 text-right font-mono font-semibold ${d.stock.left < 0 ? 'text-red-400' : 'text-green-400'}`}>{d.stock.left}</td>
-                  <td className="px-4 py-3"><span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${STATUS_COLOR[d.status]}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{STATUS_LABEL[d.status]}</span></td>
-                  <td className="px-4 py-3 text-xs whitespace-nowrap">
-                    {d.warranty_expiry ? <span className={expired ? 'text-red-400' : 'text-gray-400'}>{d.warranty_from ? `${fmtDate(d.warranty_from)} → ` : 'đến '}{fmtDate(d.warranty_expiry)}</span> : <span className="text-gray-600">—</span>}
-                  </td>
+                  <td className="px-4 py-3 text-gray-300">{catLabel(S, d.category)}</td>
+                  {cols.map((c) => <td key={c.key} className={`px-4 py-3 ${c.right ? 'text-right' : ''}`}>{c.cell(d)}</td>)}
                 </tr>
               )
             })}
@@ -188,20 +211,21 @@ export default function DevicesPage() {
       </div>
 
       {modal && <PhieuModal type={modal} onClose={() => setModal(null)} onSaved={(m) => { setModal(null); flash(`Đã lưu phiếu ${m.so}`); fetchDevices() }} />}
-      {adding && <AddDeviceModal onClose={() => setAdding(false)} onSaved={(id) => { setAdding(false); router.push(`/dashboard/devices/${id}`) }} />}
+      {adding && <AddDeviceModal S={S} onClose={() => setAdding(false)} onSaved={(id) => { setAdding(false); router.push(`/dashboard/devices/${id}`) }} />}
       {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-800 border border-gray-600 px-4 py-2.5 rounded-xl text-sm shadow-xl">{toast}</div>}
     </div>
   )
 }
 
 // Thêm mã vào Danh mục — đúng 5 cột Sếp chốt: Mã tài sản · Loại · Hãng · Model · Số Seri
-function AddDeviceModal({ onClose, onSaved }: { onClose: () => void; onSaved: (id: string) => void }) {
+function AddDeviceModal({ S, onClose, onSaved }: { S: KhoSettings; onClose: () => void; onSaved: (id: string) => void }) {
+  const L = S.fieldLabels
   const [f, setF] = useState({ asset_code: '', category: '' as DeviceCategory | '', brand: '', model: '', serial_number: '' })
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
   const input = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500'
   async function save() {
-    if (!f.asset_code.trim() || !f.category) { setErr('Cần nhập Mã tài sản và chọn Loại'); return }
+    if (!f.asset_code.trim() || !f.category) { setErr(`Cần nhập ${L.asset_code} và chọn ${L.category}`); return }
     setSaving(true); setErr('')
     const res = await fetch('/api/devices/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f) })
     const json = await res.json()
@@ -217,16 +241,16 @@ function AddDeviceModal({ onClose, onSaved }: { onClose: () => void; onSaved: (i
           <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={18} /></button>
         </div>
         <div className="p-5 grid grid-cols-2 gap-4">
-          <div className="col-span-2"><label className="block text-xs text-gray-400 mb-1">Mã tài sản <b className="text-red-400">*</b></label><input className={input + ' font-mono'} value={f.asset_code} onChange={(e) => setF({ ...f, asset_code: e.target.value })} placeholder="VD LT-007" autoFocus /></div>
-          <div><label className="block text-xs text-gray-400 mb-1">Loại <b className="text-red-400">*</b></label>
+          <div className="col-span-2"><label className="block text-xs text-gray-400 mb-1">{L.asset_code} <b className="text-red-400">*</b></label><input className={input + ' font-mono'} value={f.asset_code} onChange={(e) => setF({ ...f, asset_code: e.target.value })} placeholder="VD LT-007" autoFocus /></div>
+          <div><label className="block text-xs text-gray-400 mb-1">{L.category} <b className="text-red-400">*</b></label>
             <select className={input} value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as DeviceCategory })}>
               <option value="">— chọn —</option>
-              {CATEGORY_ORDER.map((k) => <option key={k} value={k}>{CATEGORY_LABEL[k]}</option>)}
+              {S.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
           </div>
-          <div><label className="block text-xs text-gray-400 mb-1">Hãng</label><input className={input} value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })} /></div>
-          <div><label className="block text-xs text-gray-400 mb-1">Model</label><input className={input} value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })} /></div>
-          <div><label className="block text-xs text-gray-400 mb-1">Số Seri</label><input className={input} value={f.serial_number} onChange={(e) => setF({ ...f, serial_number: e.target.value })} /></div>
+          <div><label className="block text-xs text-gray-400 mb-1">{L.brand}</label><input className={input} value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })} /></div>
+          <div><label className="block text-xs text-gray-400 mb-1">{L.model}</label><input className={input} value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })} /></div>
+          <div><label className="block text-xs text-gray-400 mb-1">{L.serial_number}</label><input className={input} value={f.serial_number} onChange={(e) => setF({ ...f, serial_number: e.target.value })} /></div>
           <p className="col-span-2 text-xs text-gray-500">Thiết bị mới có tồn 0 — sau khi thêm, bấm <b>+ Nhập kho</b> để ghi số lượng. Thông số kĩ thuật, bảo hành nhập ở trang chi tiết.</p>
           {err && <p className="col-span-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{err}</p>}
         </div>

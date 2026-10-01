@@ -1,4 +1,6 @@
-export type DeviceCategory = 'laptop' | 'monitor' | 'pc' | 'peripheral' | 'printer' | 'networking' | 'component' | 'ups' | 'other'
+// 9 loại có sẵn; từ Đợt 2 (01/10/2026) Admin thêm được Loại mới ở "Sửa giao diện" → DeviceCategory là chuỗi bất kỳ
+export type BuiltinCategory = 'laptop' | 'monitor' | 'pc' | 'peripheral' | 'printer' | 'networking' | 'component' | 'ups' | 'other'
+export type DeviceCategory = string
 export type DeviceStatus = 'in_use' | 'in_stock' | 'broken' | 'liquidated'
 export type UserRole = 'admin' | 'it_staff' | 'viewer'
 

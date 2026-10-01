@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Monitor, Users, QrCode, Settings, LogOut, Gift, ClipboardCheck, ArrowLeft, Warehouse } from 'lucide-react'
+import { LayoutDashboard, Monitor, Users, QrCode, Settings, LogOut, Gift, ClipboardCheck, ArrowLeft, Warehouse, Paintbrush } from 'lucide-react'
 import { useRole } from '@/lib/hooks/useRole'
 import { UserAvatar } from '@/components/UserAvatar'
 import { AppLauncher } from '@/components/AppLauncher'
@@ -17,6 +17,8 @@ const navItems = [
   { href: '/dashboard/employees', label: 'Nhân viên', icon: Users, adminOnly: false },
   { href: '/dashboard/scan', label: 'Quét QR', icon: QrCode, adminOnly: false },
   { href: '/dashboard/settings', label: 'Cài đặt', icon: Settings, adminOnly: true },
+  // Đợt 2 (01/10/2026): Admin tự sửa Loại, thông số, trường, cột, tình trạng, ô Tổng quan, mẫu phiếu in
+  { href: '/dashboard/giao-dien', label: 'Sửa giao diện', icon: Paintbrush, adminOnly: true },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

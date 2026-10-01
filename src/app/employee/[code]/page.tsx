@@ -4,16 +4,13 @@ import Link from 'next/link'
 import { getEmployeeById, findEmployeeByEmployeeCode, toEmployeeJson } from '@/lib/firestore/employees'
 import { personHoldings } from '@/lib/firestore/moves'
 import { toDeviceJson } from '@/lib/firestore/devices'
+import { getKhoSettings } from '@/lib/firestore/settings'
+import { catLabel } from '@/lib/kho/settings'
 
-const CATEGORY_LABEL: Record<string, string> = {
-  laptop: 'Laptop', monitor: 'Màn hình', pc: 'PC / Máy tính để bàn',
-  peripheral: 'Phụ kiện', printer: 'Máy in', other: 'Thiết bị khác',
-}
 const CATEGORY_ICON: Record<string, React.ElementType> = {
   laptop: Laptop, monitor: Monitor, pc: Cpu,
   peripheral: Package, printer: Printer, other: Package,
 }
-const CATEGORY_ORDER = ['pc', 'laptop', 'monitor', 'peripheral', 'printer', 'other']
 
 export default async function EmployeePublicPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
@@ -50,6 +47,7 @@ export default async function EmployeePublicPage({ params }: { params: Promise<{
     grouped[cat].push(d)
   }
 
+  const settings = await getKhoSettings()
   const dept = employee.department as { name: string } | null
 
   return (
@@ -98,7 +96,8 @@ export default async function EmployeePublicPage({ params }: { params: Promise<{
           </div>
         ) : (
           <div className="space-y-5">
-            {CATEGORY_ORDER.filter(cat => grouped[cat]).map(cat => {
+            {/* Thứ tự + tên Loại theo Sửa giao diện; Loại lạ (nếu có) xếp cuối, không bị ẩn */}
+            {[...new Set([...settings.categories.map((c) => c.key), ...Object.keys(grouped)])].filter(cat => grouped[cat]).map(cat => {
               const Icon = CATEGORY_ICON[cat] || Package
               const items = grouped[cat]
               return (
@@ -106,7 +105,7 @@ export default async function EmployeePublicPage({ params }: { params: Promise<{
                   {/* Group header */}
                   <div className="flex items-center gap-2 px-4 py-3 bg-gray-800/50 border-b border-gray-800">
                     <Icon size={15} className="text-blue-400" />
-                    <span className="text-sm font-semibold text-gray-200">{CATEGORY_LABEL[cat] || cat}</span>
+                    <span className="text-sm font-semibold text-gray-200">{catLabel(settings, cat)}</span>
                     <span className="ml-auto text-xs text-gray-500 bg-gray-700/60 px-2 py-0.5 rounded-full">
                       {items.length} cái
                     </span>

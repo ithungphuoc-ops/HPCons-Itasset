@@ -8,7 +8,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Plus, Trash2, Printer, Save } from 'lucide-react'
 import DatePicker from '@/components/DatePicker'
-import { MOVE_DEFS, TINH_TRANG, PRINT_DEFAULTS, deviceName, normalizeVi, todayIso, type MoveType } from '@/lib/kho/config'
+import { MOVE_DEFS, normalizeVi, todayIso, type MoveType } from '@/lib/kho/config'
+import { deviceNameS } from '@/lib/kho/settings'
+import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 import type { DeviceCategory } from '@/lib/types'
 import { PrintPreview, type PrintableMove } from '@/components/kho/PhieuPrint'
 
@@ -30,6 +32,9 @@ export default function PhieuModal({ type, presetDeviceId, onClose, onSaved }: {
   onSaved: (move: { id: string; so: string | null }) => void
 }) {
   const def = MOVE_DEFS[type]
+  // Tình trạng, tên Loại, ô "Theo đề nghị" theo "Sửa giao diện"
+  const { settings } = useKhoSettings()
+  const deviceName = (d: CatalogDevice) => deviceNameS(settings, d)
   const [catalog, setCatalog] = useState<CatalogDevice[]>([])
   const [loadingCat, setLoadingCat] = useState(true)
   const [date, setDate] = useState(todayIso())
@@ -163,7 +168,7 @@ export default function PhieuModal({ type, presetDeviceId, onClose, onSaved }: {
                   onChange={(e) => { setInfo({ ...info, [f.key]: e.target.value }); setErrs((x) => ({ ...x, [f.key]: false })) }} />
               </div>
             ))}
-            {PRINT_DEFAULTS.showDN && (
+            {settings.print.showDN && (
               <>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Theo đề nghị số</label>
@@ -243,7 +248,7 @@ export default function PhieuModal({ type, presetDeviceId, onClose, onSaved }: {
                         <td className="px-3 py-2">
                           <select className={`${input} ${bd('condition' + i)}`} value={l.condition} onChange={(e) => setLine(i, { condition: e.target.value })}>
                             <option value="">— chọn —</option>
-                            {TINH_TRANG.map((t) => <option key={t}>{t}</option>)}
+                            {settings.conditions.map((t) => <option key={t}>{t}</option>)}
                           </select>
                         </td>
                         <td className="px-3 py-2"><input className={`${input} border-gray-700`} value={l.note} onChange={(e) => setLine(i, { note: e.target.value })} /></td>

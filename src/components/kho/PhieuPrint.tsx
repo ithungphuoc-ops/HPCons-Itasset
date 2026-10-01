@@ -5,7 +5,9 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Printer, X } from 'lucide-react'
-import { MOVE_DEFS, PRINT_DEFAULTS, fmtDate, type MoveType } from '@/lib/kho/config'
+import { MOVE_DEFS, fmtDate, type MoveType } from '@/lib/kho/config'
+import type { PrintCfg } from '@/lib/kho/settings'
+import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 
 export interface PrintableMove {
   type: MoveType
@@ -21,9 +23,11 @@ function Info({ k, v }: { k: string; v?: string }) {
   return <div style={{ flex: 1 }}>{k}: {v ? v : <span className="dotted" />}</div>
 }
 
-export function PhieuSheet({ move, draft }: { move: PrintableMove; draft?: boolean }) {
+// cfg = mẫu phiếu ("Sửa giao diện → Mẫu phiếu in"); trang sửa mẫu truyền bản đang sửa để xem trước
+export function PhieuSheet({ move, draft, cfg }: { move: PrintableMove; draft?: boolean; cfg: PrintCfg }) {
   const def = MOVE_DEFS[move.type]
-  const P = PRINT_DEFAULTS
+  const P = cfg
+  const T = cfg.types[move.type] || { title: def.title, sign: def.sign, foot: '' }
   const i = move.info
   const [y, m, d] = (move.date || '').split('-')
   const [dy, dm, dd] = (move.dnDate || '').split('-')
@@ -44,14 +48,14 @@ export function PhieuSheet({ move, draft }: { move: PrintableMove; draft?: boole
     <div className="phieu-sheet">
       <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-company.png" alt="HP Cons" style={{ width: 96, height: 'auto', flex: 'none' }} />
+        <img src={P.logo || '/logo-company.png'} alt="HP Cons" style={{ width: 96, height: 'auto', flex: 'none' }} />
         <div>
           <b style={{ fontSize: '13.5pt', textTransform: 'uppercase' }}>{P.coName}</b>
           <div style={{ fontSize: '11.5pt' }}>{P.coAddr}</div>
           <div style={{ fontSize: '11.5pt' }}>{P.coTax}</div>
         </div>
       </div>
-      <div style={{ textAlign: 'center', fontSize: '21pt', fontWeight: 700, margin: '16px 0 4px', textTransform: 'uppercase' }}>{def.title}</div>
+      <div style={{ textAlign: 'center', fontSize: '21pt', fontWeight: 700, margin: '16px 0 4px', textTransform: 'uppercase' }}>{T.title}</div>
       <div style={{ textAlign: 'center', fontSize: '12pt' }}>
         <i style={{ display: 'block' }}>Ngày: {fmtDate(move.date)}</i>
         Số: {draft ? <i>(bản in thử — chưa lưu)</i> : move.so || <i>(dữ liệu cũ)</i>}
@@ -87,9 +91,10 @@ export function PhieuSheet({ move, draft }: { move: PrintableMove; draft?: boole
           <tr><td /><td colSpan={3} style={{ textAlign: 'center' }}><b>Cộng</b></td><td style={{ textAlign: 'right' }}><b>{total}</b></td><td /><td /></tr>
         </tbody>
       </table>
+      {T.foot && <div style={{ marginTop: 8, fontSize: '12pt', whiteSpace: 'pre-line' }}>{T.foot}</div>}
       <div style={{ textAlign: 'right', fontStyle: 'italic', margin: '16px 0 4px', fontSize: '12pt' }}>Ngày {d || '…'} tháng {m || '…'} năm {y || '……'}</div>
       <div style={{ display: 'flex', textAlign: 'center', fontSize: '12pt' }}>
-        {def.sign.map((s) => (
+        {T.sign.map((s) => (
           <div key={s} style={{ flex: 1, padding: '0 4px' }}>
             <b style={{ display: 'block' }}>{s}</b><i style={{ fontSize: '11pt' }}>(Ký, họ tên)</i>
             <div style={{ height: 70 }} />
@@ -101,6 +106,7 @@ export function PhieuSheet({ move, draft }: { move: PrintableMove; draft?: boole
 }
 
 export function PrintPreview({ move, draft, onClose }: { move: PrintableMove; draft?: boolean; onClose: () => void }) {
+  const { settings } = useKhoSettings()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -119,7 +125,7 @@ export function PrintPreview({ move, draft, onClose }: { move: PrintableMove; dr
         </button>
       </div>
       <div id="print-area" className="py-5">
-        <div className="shadow-2xl mx-auto" style={{ width: '210mm', maxWidth: '100%' }}><PhieuSheet move={move} draft={draft} /></div>
+        <div className="shadow-2xl mx-auto" style={{ width: '210mm', maxWidth: '100%' }}><PhieuSheet move={move} draft={draft} cfg={settings.print} /></div>
       </div>
     </div>,
     document.body,

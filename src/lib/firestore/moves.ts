@@ -3,7 +3,9 @@ import { revalidateTag } from "next/cache";
 import { adminDb } from "@/lib/firebase/admin";
 import { TAG_DEVICES } from "@/lib/firestore/devices";
 import { computeHolders } from "@/lib/kho/holders";
-import { MOVE_DEFS, TINH_TRANG, deviceName, normalizeVi, stockHeld, stockLeft, type StockNumbers } from "@/lib/kho/config";
+import { getKhoSettings } from "@/lib/firestore/settings";
+import { deviceNameS } from "@/lib/kho/settings";
+import { MOVE_DEFS, normalizeVi, stockHeld, stockLeft, type StockNumbers } from "@/lib/kho/config";
 import type { DeviceStatus, FirestoreDevice, FirestoreMove, MoveLine, MoveType } from "@/lib/firestore/types";
 
 // Phiếu Nhập kho / Cấp phát / Thu hồi / Luân chuyển (Kho Tổng, 30/09/2026).
@@ -78,6 +80,8 @@ export async function createMove(input: CreateMoveInput, createdBy: string | nul
   if (!Array.isArray(input.lines) || input.lines.length === 0) throw new MoveError("Phiếu chưa có thiết bị nào");
   if (input.lines.length > 200) throw new MoveError("Tối đa 200 dòng thiết bị / phiếu");
 
+  // Danh sách Tình trạng + tên Loại lấy theo "Sửa giao diện" (cache 60s)
+  const settings = await getKhoSettings();
   // Gộp số lượng theo thiết bị để kiểm tra tồn đúng khi 1 thiết bị nằm ở nhiều dòng
   const qtyByDevice = new Map<string, number>();
   input.lines.forEach((l, i) => {
@@ -86,7 +90,8 @@ export async function createMove(input: CreateMoveInput, createdBy: string | nul
     // id Firestore không được chứa "/", không được là "." / ".." hay dạng __x__ (dành riêng)
     if (l.deviceId.includes("/") || l.deviceId.length > 200 || /^\.\.?$/.test(l.deviceId) || /^__.*__$/.test(l.deviceId)) throw new MoveError(`Dòng ${i + 1}: mã tài sản không có trong danh mục — vui lòng kiểm tra lại`);
     if (!Number.isInteger(l.qty) || l.qty < 1) throw new MoveError(`Dòng ${i + 1}: số lượng phải là số nguyên từ 1 trở lên`);
-    if (!TINH_TRANG.includes(l.condition)) throw new MoveError(`Dòng ${i + 1}: chưa chọn tình trạng`);
+    if (!l.condition) throw new MoveError(`Dòng ${i + 1}: chưa chọn tình trạng`);
+    if (!settings.conditions.includes(l.condition)) throw new MoveError(`Dòng ${i + 1}: tình trạng "${String(l.condition).slice(0, 40)}" không còn trong danh sách — tải lại trang rồi chọn lại`);
     qtyByDevice.set(l.deviceId, (qtyByDevice.get(l.deviceId) || 0) + l.qty);
   });
 
@@ -132,7 +137,7 @@ export async function createMove(input: CreateMoveInput, createdBy: string | nul
 
     const lines: MoveLine[] = input.lines.map((l) => {
       const d = devices.get(l.deviceId)!;
-      return { deviceId: d.id, assetCode: d.assetCode, name: deviceName(d), serial: d.serialNumber ?? null, qty: l.qty, condition: l.condition, note: l.note ? String(l.note).slice(0, 300) : null };
+      return { deviceId: d.id, assetCode: d.assetCode, name: deviceNameS(settings, d), serial: d.serialNumber ?? null, qty: l.qty, condition: l.condition, note: l.note ? String(l.note).slice(0, 300) : null };
     });
 
     const n = ((cSnap.exists ? cSnap.data()?.n : 0) || 0) + 1;

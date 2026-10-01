@@ -49,6 +49,7 @@ export function toDeviceJson(device: FirestoreDevice) {
     // ---- Kho Tổng ----
     specs: specsOf(device),
     warranty_from: device.warrantyFrom ?? null,
+    extra: device.extra || {},
     stock: { ...stockOf(device), left: stockLeft(stockOf(device)), held: stockHeld(stockOf(device)) },
     stock_migrated: !!device.stock,
   };
@@ -142,6 +143,7 @@ export async function createDevice(input: CreateDeviceInput): Promise<FirestoreD
 
 export interface UpdateDeviceInput {
   assetCode?: string;
+  extra?: Record<string, string>;
   specs?: Record<string, string>;
   warrantyFrom?: string | null;
   category?: FirestoreDevice["category"];

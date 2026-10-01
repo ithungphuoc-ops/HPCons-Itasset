@@ -11,27 +11,29 @@ import { ArrowLeft, ChevronRight, Download, Printer, QrCode, Save, Trash2, Undo2
 import DatePicker from '@/components/DatePicker'
 import { useRole } from '@/lib/hooks/useRole'
 import {
-  CATEGORY_LABEL, CATEGORY_ORDER, MOVE_DEFS, MOVE_ORDER, SPEC_FIELDS, STATUS_COLOR, STATUS_LABEL, STATUS_ORDER,
-  fmtDate, deviceName, todayIso, type MoveType,
+  MOVE_DEFS, MOVE_ORDER, STATUS_COLOR, STATUS_LABEL, STATUS_ORDER,
+  fmtDate, todayIso, type MoveType,
 } from '@/lib/kho/config'
 import { computeHolders } from '@/lib/kho/holders'
 import type { DeviceCategory, DeviceStatus } from '@/lib/types'
 import type { FirestoreMove } from '@/lib/firestore/types'
 import { PrintPreview, type PrintableMove } from '@/components/kho/PhieuPrint'
+import { catLabel, deviceNameS, specFieldsOf, type ExtraField } from '@/lib/kho/settings'
+import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 
 interface DeviceJson {
   id: string; asset_code: string; category: DeviceCategory; brand: string; model: string
   serial_number: string | null; status: DeviceStatus; warranty_from: string | null; warranty_expiry: string | null
-  image_url: string | null; specs: Record<string, string>; stock_migrated: boolean
+  image_url: string | null; specs: Record<string, string>; extra: Record<string, string>; stock_migrated: boolean
   stock: { in: number; out: number; back: number; move: number; left: number; held: number }
 }
 type Form = {
   asset_code: string; category: DeviceCategory; brand: string; model: string; serial_number: string
-  status: DeviceStatus; warranty_from: string; warranty_expiry: string; specs: Record<string, string>
+  status: DeviceStatus; warranty_from: string; warranty_expiry: string; specs: Record<string, string>; extra: Record<string, string>
 }
 const toForm = (d: DeviceJson): Form => ({
   asset_code: d.asset_code, category: d.category, brand: d.brand || '', model: d.model || '', serial_number: d.serial_number || '',
-  status: d.status, warranty_from: d.warranty_from || '', warranty_expiry: d.warranty_expiry || '', specs: { ...(d.specs || {}) },
+  status: d.status, warranty_from: d.warranty_from || '', warranty_expiry: d.warranty_expiry || '', specs: { ...(d.specs || {}) }, extra: { ...(d.extra || {}) },
 })
 
 function dayDiff(a: string, b: string) {
@@ -59,6 +61,9 @@ export default function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const { canWrite, isAdmin } = useRole()
+  // Tên trường, Loại, thông số, trường bổ sung theo "Sửa giao diện" (Đợt 2)
+  const { settings: S } = useKhoSettings()
+  const L = S.fieldLabels
   const [device, setDevice] = useState<DeviceJson | null>(null)
   const [moves, setMoves] = useState<FirestoreMove[]>([])
   const [form, setForm] = useState<Form | null>(null)
@@ -101,14 +106,15 @@ export default function DeviceDetailPage() {
 
   async function save() {
     if (!form || !device) return
-    if (!form.asset_code.trim()) { setMsg({ ok: false, text: 'Mã tài sản không được để trống' }); return }
+    if (!form.asset_code.trim()) { setMsg({ ok: false, text: `${L.asset_code} không được để trống` }); return }
     setSaving(true); setMsg(null)
-    const fields = SPEC_FIELDS[form.category] || []
+    const fields = specFieldsOf(S, form.category).map((x) => x.key)
     const keys = new Set([...fields, ...Object.keys(device.specs || {})])
     const specs = Object.fromEntries([...keys].map((k) => [k, form.specs[k] || '']))
+    const extra = Object.fromEntries(S.extraFields.map((x) => [x.key, form.extra[x.key] || '']))
     const res = await fetch(`/api/devices/${id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, specs }),
+      body: JSON.stringify({ ...form, category: form.category !== device.category ? form.category : undefined, specs, extra }),
     })
     const json = await res.json()
     setSaving(false)
@@ -139,8 +145,9 @@ export default function DeviceDetailPage() {
   const ro = !canWrite
   const input = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 disabled:opacity-70'
   const s = device.stock
-  const specFields = SPEC_FIELDS[f.category] || []
-  const extraSpecs = Object.keys(f.specs).filter((k) => !specFields.includes(k) && f.specs[k])
+  // Trường thông số của Loại đang chọn + giá trị cũ còn lưu nhưng trường đã bị bỏ (vẫn hiện để không mất)
+  const defs = specFieldsOf(S, f.category)
+  const specFields = [...defs, ...Object.keys(f.specs).filter((k) => !defs.some((x) => x.key === k) && f.specs[k]).map((k) => ({ key: k, label: k, old: true }))]
 
   const rowsOf = (t: MoveType): Row[] => moves.filter((m) => m.type === t).map((m) => {
     const ls = m.lines.filter((l) => l.deviceId === device.id)
@@ -156,7 +163,7 @@ export default function DeviceDetailPage() {
             <h1 className="text-2xl font-bold font-mono">{device.asset_code}</h1>
             <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${STATUS_COLOR[device.status]}`}>{STATUS_LABEL[device.status]}</span>
           </div>
-          <p className="text-gray-400 text-sm mt-0.5">{deviceName(device)}</p>
+          <p className="text-gray-400 text-sm mt-0.5">{deviceNameS(S, device)}</p>
         </div>
         {canWrite && (
           <button onClick={() => setConfirmDel(true)} className="flex items-center gap-2 border border-red-800/50 hover:border-red-600 px-4 py-2 rounded-lg text-sm text-red-400">
@@ -178,15 +185,16 @@ export default function DeviceDetailPage() {
           {canWrite && <span className="text-xs text-gray-500">sửa xong bấm <b>Lưu</b> ở góc dưới</span>}
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          <Fld label="Mã tài sản"><input className={input + ' font-mono'} disabled={ro} value={f.asset_code} onChange={(e) => set({ asset_code: e.target.value })} /></Fld>
-          <Fld label="Loại">
+          <Fld label={L.asset_code}><input className={input + ' font-mono'} disabled={ro} value={f.asset_code} onChange={(e) => set({ asset_code: e.target.value })} /></Fld>
+          <Fld label={L.category}>
             <select className={input} disabled={ro} value={f.category} onChange={(e) => set({ category: e.target.value as DeviceCategory })}>
-              {CATEGORY_ORDER.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
+              {!S.categories.some((c) => c.key === f.category) && <option value={f.category}>{catLabel(S, f.category)}</option>}
+              {S.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
           </Fld>
-          <Fld label="Hãng"><input className={input} disabled={ro} value={f.brand} onChange={(e) => set({ brand: e.target.value })} /></Fld>
-          <Fld label="Model"><input className={input} disabled={ro} value={f.model} onChange={(e) => set({ model: e.target.value })} /></Fld>
-          <Fld label="Số Seri"><input className={input} disabled={ro} value={f.serial_number} onChange={(e) => set({ serial_number: e.target.value })} /></Fld>
+          <Fld label={L.brand}><input className={input} disabled={ro} value={f.brand} onChange={(e) => set({ brand: e.target.value })} /></Fld>
+          <Fld label={L.model}><input className={input} disabled={ro} value={f.model} onChange={(e) => set({ model: e.target.value })} /></Fld>
+          <Fld label={L.serial_number}><input className={input} disabled={ro} value={f.serial_number} onChange={(e) => set({ serial_number: e.target.value })} /></Fld>
 
           <Stat label="Nhập kho" v={s.in} hint="cộng từ Lịch sử nhập kho" green />
           <Stat label="Đã cấp" v={s.out} hint="cộng từ Lịch sử cấp phát" />
@@ -194,20 +202,25 @@ export default function DeviceDetailPage() {
           <Stat label="Luân chuyển" v={s.move} hint="không làm đổi tồn" />
           <Stat label="Tồn kho" v={s.left} hint={`= ${s.in} − ${s.out} + ${s.back}`} green />
 
-          <Fld label="Trạng thái">
+          <Fld label={L.status}>
             <select className={input} disabled={ro} value={f.status} onChange={(e) => set({ status: e.target.value as DeviceStatus })}>
               {STATUS_ORDER.map((x) => <option key={x} value={x}>{STATUS_LABEL[x]}</option>)}
             </select>
             <p className="text-[11px] text-gray-500 mt-1">Tự đổi khi cấp phát / thu hồi</p>
           </Fld>
           <div className="col-span-2">
-            <div className="text-xs text-gray-400 mb-1">Thời gian bảo hành</div>
+            <div className="text-xs text-gray-400 mb-1">{L.warranty}</div>
             <div className="grid grid-cols-2 gap-2">
               <div><div className="text-[11px] text-gray-500">Từ ngày</div>{ro ? <div className="text-sm py-2">{fmtDate(f.warranty_from)}</div> : <DatePicker value={f.warranty_from} onChange={(v) => set({ warranty_from: v })} />}</div>
               <div><div className="text-[11px] text-gray-500">Đến ngày</div>{ro ? <div className="text-sm py-2">{fmtDate(f.warranty_expiry)}</div> : <DatePicker value={f.warranty_expiry} onChange={(v) => set({ warranty_expiry: v })} />}</div>
             </div>
             <div className="mt-1.5"><WarrantyBadge to={f.warranty_expiry} /></div>
           </div>
+          {S.extraFields.map((x) => (
+            <Fld key={x.key} label={x.label}>
+              <ExtraInput field={x} disabled={ro} className={input} value={f.extra[x.key] || ''} onChange={(v) => set({ extra: { ...f.extra, [x.key]: v } })} />
+            </Fld>
+          ))}
           {device.image_url && (
             <Fld label="Ảnh">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -220,17 +233,17 @@ export default function DeviceDetailPage() {
       {/* ===== Thông số kĩ thuật (riêng theo Loại) ===== */}
       <section className="bg-gray-900 border border-gray-800 rounded-xl mb-4">
         <FoldHead open={!!open.specs} onClick={() => toggle('specs')} title="Thông số kĩ thuật"
-          extra={<span className="text-xs px-2 py-0.5 rounded border border-amber-500/40 text-amber-400">riêng theo Loại: {CATEGORY_LABEL[f.category]}</span>}
-          count={`${[...specFields, ...extraSpecs].filter((k) => f.specs[k]).length}/${specFields.length + extraSpecs.length} trường có dữ liệu`} />
-        {open.specs && <div className="px-5 pb-5">{specFields.length || extraSpecs.length ? (
+          extra={<span className="text-xs px-2 py-0.5 rounded border border-amber-500/40 text-amber-400">riêng theo {L.category}: {catLabel(S, f.category)}</span>}
+          count={`${specFields.filter((x) => f.specs[x.key]).length}/${specFields.length} trường có dữ liệu`} />
+        {open.specs && <div className="px-5 pb-5">{specFields.length ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {[...specFields, ...extraSpecs].map((k) => (
-              <Fld key={k} label={k}>
-                <input className={input} disabled={ro} value={f.specs[k] || ''} onChange={(e) => set({ specs: { ...f.specs, [k]: e.target.value } })} />
+            {specFields.map((x) => (
+              <Fld key={x.key} label={'old' in x ? `${x.label} (trường cũ)` : x.label}>
+                <input className={input} disabled={ro} value={f.specs[x.key] || ''} onChange={(e) => set({ specs: { ...f.specs, [x.key]: e.target.value } })} />
               </Fld>
             ))}
           </div>
-        ) : <p className="text-sm text-gray-500">Loại &quot;{CATEGORY_LABEL[f.category]}&quot; chưa có trường thông số (sẽ thêm được ở &quot;Sửa giao diện&quot;).</p>}</div>}
+        ) : <p className="text-sm text-gray-500">{L.category} &quot;{catLabel(S, f.category)}&quot; chưa có trường thông số{isAdmin ? <> — thêm ở <Link href="/dashboard/giao-dien" className="text-blue-400 hover:underline">Sửa giao diện</Link></> : ''}.</p>}</div>}
       </section>
 
       {/* ===== 4 bảng lịch sử ===== */}
@@ -330,6 +343,20 @@ export default function DeviceDetailPage() {
       )}
     </div>
   )
+}
+
+// Ô nhập trường bổ sung (Sửa giao diện) theo kiểu: Chữ / Số / Ngày / Lựa chọn
+function ExtraInput({ field, value, onChange, disabled, className }: { field: ExtraField; value: string; onChange: (v: string) => void; disabled: boolean; className: string }) {
+  if (field.type === 'date') return disabled ? <div className="text-sm py-2">{fmtDate(value)}</div> : <DatePicker value={value} onChange={onChange} />
+  if (field.type === 'select') return (
+    <select className={className} disabled={disabled} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">—</option>
+      {value && !field.options.includes(value) && <option value={value}>{value}</option>}
+      {field.options.map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>
+  )
+  return <input className={className} disabled={disabled} inputMode={field.type === 'number' ? 'decimal' : undefined} value={value}
+    onChange={(e) => onChange(field.type === 'number' ? e.target.value.replace(/[^\d.,-]/g, '') : e.target.value)} />
 }
 
 // Tiêu đề khối thu gọn / xổ ra

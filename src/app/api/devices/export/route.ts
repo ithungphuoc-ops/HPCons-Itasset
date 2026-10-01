@@ -2,12 +2,10 @@ import { NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { listAllDevices, toDeviceJson } from '@/lib/firestore/devices'
 import { fmtDate } from '@/lib/kho/config'
+import { getKhoSettings } from '@/lib/firestore/settings'
+import { catLabel, specFieldsOf } from '@/lib/kho/settings'
 import { requireSession } from '@/lib/session'
 
-const CATEGORY: Record<string, string> = {
-  laptop: 'Laptop', monitor: 'Màn hình', pc: 'PC', peripheral: 'Phụ kiện',
-  printer: 'Máy in', networking: 'Mạng', component: 'Linh kiện', ups: 'UPS', other: 'Khác',
-}
 const STATUS: Record<string, string> = {
   in_use: 'Đang dùng', in_stock: 'Trong kho', broken: 'Hỏng', liquidated: 'Thanh lý',
 }
@@ -21,24 +19,27 @@ export async function GET() {
 
   // Kho Tổng (30/09/2026): xuất theo cột mới — số liệu tồn lấy sẵn trên thiết bị, không đọc thêm
   // lịch sử / nhân viên (tiết kiệm lượt đọc). Người đang giữ xem ở trang chi tiết.
-  const devices = await listAllDevices()
+  const [devices, S] = await Promise.all([listAllDevices(), getKhoSettings()])
+  const L = S.fieldLabels
   const rows = devices.map((d) => {
     const j = toDeviceJson(d)
     return {
-      'Mã tài sản': d.assetCode,
-      'Loại': CATEGORY[d.category] || d.category,
-      'Hãng': d.brand,
-      'Model': d.model,
-      'Số Seri': d.serialNumber || '',
+      [L.asset_code]: d.assetCode,
+      [L.category]: catLabel(S, d.category),
+      [L.brand]: d.brand,
+      [L.model]: d.model,
+      [L.serial_number]: d.serialNumber || '',
       'Nhập kho': j.stock.in,
       'Đã cấp': j.stock.out,
       'Thu hồi': j.stock.back,
       'Luân chuyển': j.stock.move,
       'Tồn kho': j.stock.left,
-      'Trạng thái': STATUS[d.status] || d.status,
+      [L.status]: STATUS[d.status] || d.status,
       'Bảo hành từ': fmtDate(d.warrantyFrom),
       'Bảo hành đến': fmtDate(d.warrantyExpiry),
-      ...j.specs,
+      ...Object.fromEntries(S.extraFields.map((f) => [f.label, j.extra?.[f.key] || ''])),
+      // Thông số: tên trường theo Loại của thiết bị (đổi tên ở Sửa giao diện vẫn ra đúng)
+      ...Object.fromEntries(Object.entries(j.specs).filter(([, v]) => v).map(([k, v]) => [specFieldsOf(S, d.category).find((x) => x.key === k)?.label || k, v])),
     }
   })
 
