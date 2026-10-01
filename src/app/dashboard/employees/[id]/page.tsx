@@ -14,6 +14,7 @@ interface Employee {
   email?: string; phone?: string; is_active: boolean
   department_id?: string
   department?: { id: string; name: string }
+  hpcore_uid?: string | null
 }
 interface Assignment {
   id: string; assigned_date: string; is_active: boolean
@@ -106,6 +107,8 @@ export default function EmployeeDetailPage() {
   if (loading) return <div className="p-8 text-gray-400">Đang tải...</div>
   if (!employee) return null
 
+  // Đợt 3: người đồng bộ từ HPcore — họ tên / email / phòng ban do App Tổng quản
+  const hp = !!employee.hpcore_uid
   const activeAssignments = assignments.filter(a => a.is_active)
   const historyAssignments = assignments.filter(a => !a.is_active)
 
@@ -123,10 +126,13 @@ export default function EmployeeDetailPage() {
                 className="flex items-center gap-1.5 border border-gray-700 hover:border-blue-500 hover:text-blue-400 px-4 py-2 rounded-lg text-sm transition-colors">
                 <Pencil size={14} /> Chỉnh sửa
               </button>
-              <button onClick={() => setShowDeleteConfirm(true)}
-                className="flex items-center gap-1.5 border border-gray-700 hover:border-red-500 hover:text-red-400 px-4 py-2 rounded-lg text-sm transition-colors">
-                <Trash2 size={14} /> Xóa
-              </button>
+              {/* Người đồng bộ từ HPcore: nghỉ việc thì khoá ở App Tổng, lần đồng bộ sau tự ngưng ở đây */}
+              {!hp && (
+                <button onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 border border-gray-700 hover:border-red-500 hover:text-red-400 px-4 py-2 rounded-lg text-sm transition-colors">
+                  <Trash2 size={14} /> Xóa
+                </button>
+              )}
             </>
           )}
         </div>
@@ -162,21 +168,22 @@ export default function EmployeeDetailPage() {
         {editing ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Họ tên *" value={form.full_name} onChange={v => setForm(f => ({ ...f, full_name: v }))} />
+              <Field label="Họ tên *" disabled={hp} value={form.full_name} onChange={v => setForm(f => ({ ...f, full_name: v }))} />
               <Field label="Mã nhân viên" value={form.employee_code} onChange={v => setForm(f => ({ ...f, employee_code: v }))} />
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">Phòng ban</label>
-              <select value={form.department_id} onChange={e => setForm(f => ({ ...f, department_id: e.target.value }))}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500">
+              <select disabled={hp} value={form.department_id} onChange={e => setForm(f => ({ ...f, department_id: e.target.value }))}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 disabled:opacity-60">
                 <option value="">-- Chưa phân công --</option>
                 {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Email" type="email" value={form.email} onChange={v => setForm(f => ({ ...f, email: v }))} />
+              <Field label="Email" type="email" disabled={hp} value={form.email} onChange={v => setForm(f => ({ ...f, email: v }))} />
               <Field label="Số điện thoại" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} />
             </div>
+            {hp && <p className="text-xs text-blue-300">Họ tên, email, phòng ban lấy từ App Tổng HPcore — sửa ở account.hpcore.vn. Ở đây chỉ sửa được mã nhân viên và số điện thoại.</p>}
             {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex gap-2 pt-1">
               <button onClick={handleSave} disabled={saving}
@@ -311,13 +318,13 @@ export default function EmployeeDetailPage() {
   )
 }
 
-function Field({ label, value, onChange, type = 'text' }: {
-  label: string; value: string; onChange: (v: string) => void; type?: string
+function Field({ label, value, onChange, type = 'text', disabled }: {
+  label: string; value: string; onChange: (v: string) => void; type?: string; disabled?: boolean
 }) {
   return (
     <div>
       <label className="block text-sm text-gray-400 mb-1.5">{label}</label>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)}
+      <input type={type} value={value} disabled={disabled} onChange={e => onChange(e.target.value)}
         className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500" />
     </div>
   )

@@ -10,16 +10,16 @@ import { ArrowDown, ArrowUp, Plus, Save, Trash2, Undo2, Upload } from 'lucide-re
 import { useRole } from '@/lib/hooks/useRole'
 import { MOVE_DEFS, MOVE_ORDER, type MoveType } from '@/lib/kho/config'
 import {
-  BASE_FIELDS, BASE_FIELD_DEFAULT, LIST_COLS, LIST_COL_LABEL, TILE_KIND_LABEL, defaultSettings, newKey,
+  BASE_FIELDS, BASE_FIELD_DEFAULT, LIST_COLS, LIST_COL_LABEL, TILE_KIND_LABEL, defaultSettings, newKey, normalizeSettings,
   type ExtraType, type KhoSettings, type TileKind,
 } from '@/lib/kho/settings'
 import { setKhoSettingsCache } from '@/lib/kho/useKhoSettings'
 import { PhieuSheet, type PrintableMove } from '@/components/kho/PhieuPrint'
 
-type Tab = 'cats' | 'fields' | 'cols' | 'conds' | 'tiles' | 'print'
+type Tab = 'cats' | 'fields' | 'cols' | 'conds' | 'tiles' | 'print' | 'people'
 const TABS: [Tab, string][] = [
   ['cats', 'Loại & Thông số'], ['fields', 'Trường Thông tin chung'], ['cols', 'Cột danh sách'],
-  ['conds', 'Tình trạng'], ['tiles', 'Ô Tổng quan'], ['print', 'Mẫu phiếu in'],
+  ['conds', 'Tình trạng'], ['tiles', 'Ô Tổng quan'], ['print', 'Mẫu phiếu in'], ['people', 'Người Công việc'],
 ]
 const EXTRA_TYPE_LABEL: Record<ExtraType, string> = { text: 'Chữ', number: 'Số', date: 'Ngày', select: 'Lựa chọn' }
 const inputW = 'bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500'
@@ -80,7 +80,7 @@ export default function GiaoDienPage() {
     let alive = true
     fetch('/api/kho-settings').then((r) => r.json()).then((j) => {
       if (!alive) return
-      const s = (j.data as KhoSettings) || defaultSettings()
+      const s = j.data ? normalizeSettings(j.data) : defaultSettings()
       setSaved(s); setDraft(structuredClone(s))
       const t = new URLSearchParams(window.location.search).get('tab') as Tab | null
       if (t && TABS.some(([k]) => k === t)) setTab(t)
@@ -119,7 +119,7 @@ export default function GiaoDienPage() {
     const json = await res.json()
     setSaving(false)
     if (!res.ok) { setMsg({ ok: false, text: json.error || 'Chưa lưu được' }); return }
-    setSaved(json.data); setDraft(structuredClone(json.data)); setKhoSettingsCache(json.data)
+    const ns = normalizeSettings(json.data); setSaved(ns); setDraft(structuredClone(ns)); setKhoSettingsCache(ns)
     setMsg({ ok: true, text: 'Đã lưu — mọi trang dùng cấu hình mới' })
     setTimeout(() => setMsg(null), 3000)
   }
@@ -257,6 +257,24 @@ export default function GiaoDienPage() {
             ))}
           </div>
           <button type="button" onClick={() => set({ conditions: [...D.conditions, 'Tình trạng mới'] })} className="mt-3 flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300"><Plus size={14} /> Thêm tình trạng</button>
+        </section>
+      )}
+
+      {/* ===== 7. Người Công việc (Đợt 3) ===== */}
+      {tab === 'people' && (
+        <section className="bg-gray-900 border border-gray-800 rounded-xl p-4 max-w-xl">
+          <h2 className="font-semibold mb-1">Người dùng Công việc</h2>
+          <p className="text-xs text-gray-500 mb-3">Danh sách riêng (khoảng 4–5 người) — ô <b>Phụ trách</b> chọn từ đây, ô <b>Người yêu cầu</b> gợi ý từ đây (vẫn gõ tay được). Không lấy từ HPcore.</p>
+          <div className="space-y-1.5">
+            {D.taskPeople.map((p, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input className={input} value={p} placeholder="Họ tên" onChange={(e) => set({ taskPeople: D.taskPeople.map((x, k) => (k === i ? e.target.value : x)) })} />
+                <RowBtns i={i} n={D.taskPeople.length} onMove={(d) => set({ taskPeople: move(D.taskPeople, i, d) })} onDel={() => set({ taskPeople: del(D.taskPeople, i) })} />
+              </div>
+            ))}
+            {!D.taskPeople.length && <p className="text-sm text-gray-500">Chưa có ai.</p>}
+          </div>
+          <button type="button" onClick={() => set({ taskPeople: [...D.taskPeople, ''] })} className="mt-3 flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300"><Plus size={14} /> Thêm người</button>
         </section>
       )}
 

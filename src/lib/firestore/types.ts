@@ -25,6 +25,12 @@ export interface FirestoreEmployee {
   employeeCode: string | null;
   isActive: boolean;
   createdAt: string;
+  // Đồng bộ từ App Tổng HPcore (Đợt 3, 01/10/2026) — có hpcoreUid = họ tên / email / phòng ban do HPcore quản
+  hpcoreUid?: string | null;
+  title?: string | null;
+  hpcoreSyncedAt?: string | null;
+  // Tên cũ (trước khi HPcore đổi tên) — phiếu gõ tay theo tên cũ vẫn tính là của người này
+  aliases?: string[];
 }
 
 export interface LaptopSpecs {

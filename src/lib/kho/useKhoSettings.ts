@@ -2,7 +2,7 @@
 // Đọc cấu hình "Sửa giao diện" ở trình duyệt — tải 1 lần / phiên (dùng chung mọi trang), trong lúc
 // chờ thì dùng mặc định. Lưu xong ở trang Sửa giao diện gọi setKhoSettingsCache() để mọi nơi đổi theo.
 import { useEffect, useState } from 'react'
-import { defaultSettings, type KhoSettings } from '@/lib/kho/settings'
+import { defaultSettings, normalizeSettings, type KhoSettings } from '@/lib/kho/settings'
 
 const DEFAULTS = defaultSettings()
 let cache: KhoSettings | null = null
@@ -14,13 +14,14 @@ function load(): Promise<KhoSettings> {
   if (!inflight) {
     inflight = fetch('/api/kho-settings')
       .then((r) => r.json())
-      .then((j) => { cache = (j.data as KhoSettings) || DEFAULTS; loadedAt = Date.now(); listeners.forEach((f) => f(cache!)); return cache })
+      .then((j) => { cache = j.data ? normalizeSettings(j.data) : DEFAULTS; loadedAt = Date.now(); listeners.forEach((f) => f(cache!)); return cache })
       .catch(() => { inflight = null; return DEFAULTS })
   }
   return inflight
 }
 
 export function setKhoSettingsCache(s: KhoSettings) {
+  s = normalizeSettings(s)
   cache = s
   inflight = Promise.resolve(s)
   listeners.forEach((f) => f(s))

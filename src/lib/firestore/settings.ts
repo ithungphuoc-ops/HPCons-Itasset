@@ -8,7 +8,7 @@ import { normalizeSettings, type KhoSettings } from "@/lib/kho/settings";
 const ref = () => adminDb.collection("settings").doc("kho_it");
 export const TAG_KHO_SETTINGS = "itasset-kho-settings";
 
-export const getKhoSettings = unstable_cache(
+const cachedSettings = unstable_cache(
   async (): Promise<KhoSettings> => {
     const snap = await ref().get();
     return normalizeSettings(snap.exists ? snap.data() : null);
@@ -16,6 +16,12 @@ export const getKhoSettings = unstable_cache(
   ["itasset-kho-settings"],
   { revalidate: 60, tags: [TAG_KHO_SETTINGS] },
 );
+
+// Chuẩn hoá LẠI sau khi lấy từ cache: bản cache có thể được tạo bởi phiên bản code cũ (thiếu mục
+// mới như taskPeople) — luôn trả về đủ mục, thiếu thì mặc định.
+export async function getKhoSettings(): Promise<KhoSettings> {
+  return normalizeSettings(await cachedSettings());
+}
 
 export async function saveKhoSettings(s: KhoSettings, by: string | null): Promise<KhoSettings> {
   const clean = normalizeSettings({ ...s, updatedAt: new Date().toISOString(), updatedBy: by });

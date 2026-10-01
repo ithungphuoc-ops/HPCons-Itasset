@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { listActiveEmployees, createEmployee, toEmployeeJson } from '@/lib/firestore/employees'
 import { requireSession, requireWriteAccess } from '@/lib/session'
+import { getSyncMeta, syncIfStale } from '@/lib/firestore/hpcoreSync'
 
 function normalize(s: string) {
   return s.toLowerCase()
@@ -17,6 +18,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const search = searchParams.get('search') || ''
 
+    // Đợt 3: danh sách lấy từ App Tổng HPcore — quá 24 giờ chưa đồng bộ thì đồng bộ trước (lỗi không chặn)
+    await syncIfStale()
     let employees = await listActiveEmployees()
     if (search) {
       const q = normalize(search)
@@ -28,7 +31,7 @@ export async function GET(req: NextRequest) {
     }
 
     const data = await Promise.all(employees.map(toEmployeeJson))
-    return NextResponse.json({ data })
+    return NextResponse.json({ data, sync: await getSyncMeta() })
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 })
   }

@@ -18,6 +18,8 @@ export async function toEmployeeJson(employee: FirestoreEmployee) {
     employee_code: employee.employeeCode,
     is_active: employee.isActive,
     created_at: employee.createdAt,
+    hpcore_uid: employee.hpcoreUid ?? null,
+    title: employee.title ?? null,
     department: department ? toDepartmentJson(department) : null,
   };
 }

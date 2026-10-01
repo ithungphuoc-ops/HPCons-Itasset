@@ -51,6 +51,9 @@ export interface KhoSettings {
   listColumns: Record<ListCol, boolean>
   tiles: TileDef[]
   print: PrintCfg
+  // Đợt 3: danh sách người riêng cho Công việc (4-5 người dùng) — Phụ trách chọn từ đây,
+  // Người yêu cầu gợi ý từ đây (vẫn gõ tay được)
+  taskPeople: string[]
   updatedAt?: string | null
   updatedBy?: string | null
 }
@@ -75,6 +78,7 @@ export function defaultSettings(): KhoSettings {
       showLetter: PRINT_DEFAULTS.showLetter, showDN: PRINT_DEFAULTS.showDN, logo: null,
       types: Object.fromEntries(MOVE_ORDER.map((t) => [t, { title: MOVE_DEFS[t].title, sign: [...MOVE_DEFS[t].sign], foot: '' }])) as Record<MoveType, PrintTypeCfg>,
     },
+    taskPeople: [], // Admin tự nhập ở Sửa giao diện (tên cũ trong TASK_ASSIGNEES chỉ là tên tạm của demo)
     updatedAt: null,
     updatedBy: null,
   }
@@ -157,7 +161,10 @@ export function normalizeSettings(raw: unknown): KhoSettings {
     types,
   }
 
+  const taskPeople = Array.isArray(r.taskPeople) ? [...new Set(r.taskPeople.map((x) => str(x, 80)).filter(Boolean))].slice(0, 50) : d.taskPeople
+
   return {
+    taskPeople,
     categories: categories.length ? categories : d.categories,
     conditions: conditions.length ? conditions : d.conditions,
     fieldLabels, extraFields, listColumns, tiles, print,

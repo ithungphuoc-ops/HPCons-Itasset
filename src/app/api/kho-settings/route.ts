@@ -30,7 +30,7 @@ export async function PUT(req: NextRequest) {
     const raw = body as Record<string, unknown>
     if (!Array.isArray(raw.categories) || !raw.categories.length) return NextResponse.json({ error: 'Phải còn ít nhất 1 Loại thiết bị' }, { status: 400 })
     if (!Array.isArray(raw.conditions) || !raw.conditions.some((c) => typeof c === 'string' && c.trim())) return NextResponse.json({ error: 'Phải còn ít nhất 1 Tình trạng' }, { status: 400 })
-    for (const k of ['extraFields', 'tiles'] as const) if (raw[k] !== undefined && !Array.isArray(raw[k])) return NextResponse.json({ error: `Dữ liệu "${k}" không hợp lệ` }, { status: 400 })
+    for (const k of ['extraFields', 'tiles', 'taskPeople'] as const) if (raw[k] !== undefined && !Array.isArray(raw[k])) return NextResponse.json({ error: `Dữ liệu "${k}" không hợp lệ` }, { status: 400 })
     for (const k of ['fieldLabels', 'listColumns', 'print'] as const) if (raw[k] !== undefined && (typeof raw[k] !== 'object' || raw[k] === null || Array.isArray(raw[k]))) return NextResponse.json({ error: `Dữ liệu "${k}" không hợp lệ` }, { status: 400 })
     const next = normalizeSettings(body)
     // Mục nào bị loại khi làm sạch (key lạ, trùng, kiểu ô không có…) → báo lỗi, không lưu nửa vời

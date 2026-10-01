@@ -13,7 +13,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     // Kho Tổng (30/09/2026): thiết bị đang giữ tính từ phiếu có tên người này (giữ shape
     // "assignments" cũ cho trang nhân viên: đang giữ = is_active, từng giữ = lịch sử)
-    const { holdings, moves } = await personHoldings(employee.fullName)
+    const { holdings, moves } = await personHoldings(employee.fullName, employee.aliases || [])
     const heldIds = new Set(holdings.map((h) => h.device.id))
     const active = holdings.map((h) => ({ id: h.device.id, assigned_date: h.since, is_active: true, quantity: h.qty, device: toDeviceJson(h.device) }))
     const pastIds = new Map<string, { date: string; line: (typeof moves)[number]['lines'][number] }>()
@@ -38,11 +38,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     const { id } = await params
     const body = await req.json()
+    const current = await getEmployeeById(id)
+    if (!current) return NextResponse.json({ error: 'Không tìm thấy nhân viên' }, { status: 404 })
+    // Người đã đồng bộ từ HPcore: họ tên / email / phòng ban do App Tổng quản → chỉ sửa được mã NV + SĐT
+    const fromHpcore = !!current.hpcoreUid
     await updateEmployee(id, {
-      fullName: body.full_name,
-      email: body.email,
+      ...(fromHpcore ? {} : { fullName: body.full_name, email: body.email, departmentId: body.department_id }),
       phone: body.phone,
-      departmentId: body.department_id,
       employeeCode: body.employee_code,
     })
     const employee = await getEmployeeById(id)

@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
 import DatePicker from '@/components/DatePicker'
-import { TASK_ASSIGNEES, type TaskType, type TaskPriority } from '@/lib/types'
+import { type TaskType, type TaskPriority } from '@/lib/types'
+import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 
 const TYPES: { value: TaskType; label: string }[] = [
   { value: 'repair', label: 'Sửa chữa' },
@@ -29,7 +30,9 @@ export default function NewTaskPage() {
   const [priority, setPriority] = useState<TaskPriority>('medium')
   const [title, setTitle] = useState('')
   const [requesterName, setRequesterName] = useState('')
-  const [assigneeName, setAssigneeName] = useState(TASK_ASSIGNEES[0])
+  // Đợt 3: danh sách người Công việc do Admin sửa ở "Sửa giao diện → Người Công việc"
+  const { settings: KS } = useKhoSettings()
+  const [assigneeName, setAssigneeName] = useState('')
   const [deviceId, setDeviceId] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [devices, setDevices] = useState<DeviceOption[]>([])
@@ -101,16 +104,18 @@ export default function NewTaskPage() {
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">Người yêu cầu *</label>
-              <input type="text" required value={requesterName} onChange={(e) => setRequesterName(e.target.value)}
-                placeholder="Họ tên nhân viên"
+              <input type="text" required list="task-people" value={requesterName} onChange={(e) => setRequesterName(e.target.value)}
+                placeholder="Chọn hoặc gõ họ tên"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">Phụ trách</label>
               <select value={assigneeName} onChange={(e) => setAssigneeName(e.target.value)}
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500">
-                {TASK_ASSIGNEES.map((a) => <option key={a}>{a}</option>)}
+                <option value="">Chưa phân công</option>
+                {KS.taskPeople.map((a) => <option key={a} value={a}>{a}</option>)}
               </select>
+              <datalist id="task-people">{KS.taskPeople.map((a) => <option key={a} value={a} />)}</datalist>
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1.5">Mức ưu tiên</label>

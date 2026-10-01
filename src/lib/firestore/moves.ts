@@ -236,10 +236,18 @@ export async function listMovesForPerson(name: string): Promise<FirestoreMove[]>
  * Thiết bị 1 người đang giữ + các phiếu có tên người đó (Thiết bị của tôi, trang nhân viên, QR
  * nhân viên). So khớp tên đã bỏ dấu vì tên trong phiếu gõ tay.
  */
-export async function personHoldings(fullName: string): Promise<{ holdings: { device: FirestoreDevice; qty: number; since: string }[]; moves: FirestoreMove[] }> {
-  const moves = await listMovesForPerson(fullName);
+export async function personHoldings(fullName: string, aliases: string[] = []): Promise<{ holdings: { device: FirestoreDevice; qty: number; since: string }[]; moves: FirestoreMove[] }> {
+  // Tên hiện tại + tên cũ (HPcore đổi tên) → gộp phiếu của mọi tên, tính như 1 người
+  const names = [...new Set([fullName, ...aliases].map((n) => normalizeVi(n)).filter(Boolean))];
+  const lists = await Promise.all(names.map((n) => collection().where("people", "array-contains", n).get()));
+  const moves = [...new Map(lists.flatMap((s) => s.docs.map(fromDoc)).map((m) => [m.id, m])).values()].sort(byDateDesc);
   const me = normalizeVi(fullName);
-  const held = computeHolders(moves).filter((h) => normalizeVi(h.name) === me && h.qty > 0);
+  const alias = new Set(names);
+  // Đổi tên các dòng theo tên cũ thành tên hiện tại rồi mới cộng dồn
+  const unified = moves.map((m) => ({ ...m, info: { ...m.info,
+    nguoi: m.info.nguoi && alias.has(normalizeVi(m.info.nguoi)) ? fullName : m.info.nguoi,
+    nguoi2: m.info.nguoi2 && alias.has(normalizeVi(m.info.nguoi2)) ? fullName : m.info.nguoi2 } }));
+  const held = computeHolders(unified).filter((h) => normalizeVi(h.name) === me && h.qty > 0);
   const snaps = held.length ? await adminDb.getAll(...held.map((h) => adminDb.collection("devices").doc(h.deviceId))) : [];
   const holdings = held
     .map((h, i) => (snaps[i]?.exists ? { device: { id: snaps[i].id, ...snaps[i].data() } as FirestoreDevice, qty: h.qty, since: h.since } : null))

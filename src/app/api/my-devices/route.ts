@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   const employee = await findEmployeeByEmail(email)
   if (!employee) return NextResponse.json({ devices: [], employee_code: null })
 
-  const { holdings } = await personHoldings(employee.fullName)
+  const { holdings } = await personHoldings(employee.fullName, employee.aliases || [])
   const devices = holdings.map(({ device, qty, since }) => ({
     id: device.id,
     brand: device.brand,

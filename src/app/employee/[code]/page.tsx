@@ -21,7 +21,7 @@ export default async function EmployeePublicPage({ params }: { params: Promise<{
   const employee = await toEmployeeJson(found)
 
   // Thiết bị đang giữ — Kho Tổng (30/09/2026): tính từ phiếu Cấp phát / Thu hồi / Luân chuyển
-  const { holdings } = await personHoldings(found.fullName)
+  const { holdings } = await personHoldings(found.fullName, found.aliases || [])
 
   type DeviceRow = {
     id: string; asset_code: string; qr_code: string; category: string

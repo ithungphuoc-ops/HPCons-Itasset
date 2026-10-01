@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
-import { Search, Plus, Upload, User, Building2, QrCode } from 'lucide-react'
-import Link from 'next/link'
+import { Search, User, Building2, QrCode, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import type { Employee } from '@/lib/types'
 import { useRole } from '@/lib/hooks/useRole'
@@ -10,19 +9,36 @@ function normalizeVi(s: string) {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, m => m === 'đ' ? 'd' : 'D').toLowerCase()
 }
 
+interface SyncMeta { syncedAt: string; by: string | null; hpcoreUsers: number; created: number; updated: number; deactivated: number }
+
 export default function EmployeesPage() {
-  const { canWrite } = useRole()
+  const { isAdmin } = useRole()
+  const [sync, setSync] = useState<SyncMeta | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState('')
   const router = useRouter()
   const [allEmployees, setAllEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
+  const [reload, setReload] = useState(0)
   useEffect(() => {
     fetch('/api/employees')
       .then(r => r.json())
-      .then(json => { setAllEmployees((json.data as Employee[]) || []); setLoading(false) })
-  }, [])
+      .then(json => { setAllEmployees((json.data as Employee[]) || []); setSync(json.sync || null); setLoading(false) })
+  }, [reload])
+
+  async function syncNow() {
+    setSyncing(true); setSyncMsg('')
+    const res = await fetch('/api/employees/sync', { method: 'POST' })
+    const json = await res.json()
+    setSyncing(false)
+    if (!res.ok) { setSyncMsg(json.error || 'Không đồng bộ được'); return }
+    const r = json.data as SyncMeta
+    setSyncMsg(`Đã đồng bộ ${r.hpcoreUsers} người từ HPcore: thêm ${r.created}, cập nhật ${r.updated}, ngưng ${r.deactivated}`)
+    setReload((n) => n + 1)
+  }
 
   const employees = useMemo(() => {
     if (!search.trim()) return allEmployees
@@ -62,19 +78,19 @@ export default function EmployeesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {canWrite && (
-            <>
-              <Link href="/dashboard/employees/import"
-                className="flex items-center gap-2 border border-gray-700 hover:border-gray-500 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 transition-colors">
-                <Upload size={15} /> Import Excel
-              </Link>
-              <Link href="/dashboard/employees/new"
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
-                <Plus size={15} /> Thêm nhân viên
-              </Link>
-            </>
+          {/* Đợt 3: Nhân viên lấy từ App Tổng HPcore — không thêm / import tay nữa */}
+          {isAdmin && (
+            <button onClick={syncNow} disabled={syncing}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
+              <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}
+            </button>
           )}
         </div>
+      </div>
+      <div className="mb-5 text-sm bg-blue-500/10 border border-blue-500/30 text-blue-200 rounded-xl px-4 py-3">
+        Danh sách lấy từ <b>App Tổng HPcore</b> (họ tên, email, phòng ban do HPcore quản — sửa ở account.hpcore.vn). Tự đồng bộ mỗi ngày 1 lần
+        {sync ? <> · lần cuối {new Date(sync.syncedAt).toLocaleString('vi-VN')} ({sync.hpcoreUsers} người)</> : <> · chưa đồng bộ lần nào</>}.
+        {syncMsg && <div className="mt-1 text-white">{syncMsg}</div>}
       </div>
 
       {/* Search */}
