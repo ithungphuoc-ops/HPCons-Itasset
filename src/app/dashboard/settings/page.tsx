@@ -72,6 +72,20 @@ function UsersTab() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  // Chọn người từ danh sách Nhân viên (đồng bộ từ App Tổng HPcore) thay vì gõ tay email (Sếp yêu cầu 02/10/2026).
+  // Dùng /api/employees đã có sẵn → không tốn thêm lượt đọc HPcore.
+  const [people, setPeople] = useState<{ id: string; full_name: string; email?: string; department?: { name: string } | null }[]>([])
+  const [q, setQ] = useState('')
+  const [pickOpen, setPickOpen] = useState(false)
+  useEffect(() => {
+    fetch('/api/employees').then((r) => r.json()).then((j) => setPeople((j.data || []).filter((e: { email?: string }) => !!e.email)))
+  }, [])
+  const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase()
+  const granted = new Set(users.map((u) => u.email.toLowerCase()))
+  const matches = people
+    .filter((e) => !granted.has((e.email || '').toLowerCase()))
+    .filter((e) => !q.trim() || norm([e.full_name, e.email || '', e.department?.name || ''].join(' ')).includes(norm(q.trim())))
+    .slice(0, 8)
 
   async function load() {
     setLoading(true)
@@ -84,6 +98,7 @@ function UsersTab() {
 
   async function handleAssign(e: React.FormEvent) {
     e.preventDefault()
+    if (!form.email) { setError('Chọn 1 nhân viên trong danh sách trước'); return }
     setSaving(true); setError('')
     const res = await fetch('/api/admin/users', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
@@ -92,7 +107,7 @@ function UsersTab() {
     setSaving(false)
     if (!res.ok) { setError(json.error || 'Lỗi'); return }
     reportActivity({ action: 'Cấp quyền dashboard', entityType: 'admin_user', entityId: form.email, detail: `Cấp vai trò "${form.role}" cho ${form.email}` })
-    setForm({ email: '', name: '', role: 'viewer' })
+    setForm({ email: '', name: '', role: 'viewer' }); setQ('')
     setSuccess('Đã cấp quyền!'); setTimeout(() => setSuccess(''), 3000)
     load()
   }
@@ -115,21 +130,40 @@ function UsersTab() {
   return (
     <div className="space-y-4">
       <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl px-4 py-3 text-xs text-blue-300/80">
-        Đăng nhập dùng chung với app tổng. Ở đây chỉ cấp <b>vai trò dashboard</b> (Chỉ xem / IT Staff / Admin) theo email.
+        Đăng nhập dùng chung với app tổng. Ở đây chỉ cấp <b>vai trò dashboard</b> (Chỉ xem / IT Staff / Admin) — chọn người trong danh sách Nhân viên lấy từ HPcore.
         Email chưa được cấp = nhân viên thường (chỉ xem thiết bị của mình ở /my-devices).
       </div>
 
       {/* Cấp quyền */}
-      <form onSubmit={handleAssign} className="bg-gray-900 border border-gray-800 rounded-xl p-5 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] gap-3 items-end">
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Email *</label>
-          <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@hpcons.com.vn" required
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Họ tên (tuỳ chọn)</label>
-          <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nguyễn Văn A"
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+      <form onSubmit={handleAssign} className="bg-gray-900 border border-gray-800 rounded-xl p-5 grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-3 items-end">
+        <div className="relative">
+          <label className="block text-xs text-gray-400 mb-1">Nhân viên (lấy từ HPcore) *</label>
+          {form.email ? (
+            <div className="flex items-center gap-3 bg-gray-800 border border-blue-500/60 rounded-lg px-3 py-1.5">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-white truncate">{form.name || form.email}</div>
+                <div className="text-xs text-gray-400 truncate">{form.email}</div>
+              </div>
+              <button type="button" onClick={() => { setForm(f => ({ ...f, email: '', name: '' })); setPickOpen(true) }} className="text-xs text-blue-400 hover:text-blue-300 shrink-0">Đổi người</button>
+            </div>
+          ) : (
+            <>
+              <input value={q} onChange={e => { setQ(e.target.value); setPickOpen(true) }} onFocus={() => setPickOpen(true)}
+                onBlur={() => setTimeout(() => setPickOpen(false), 150)} placeholder="Gõ tên, email hoặc phòng ban…"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+              {pickOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-20 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl max-h-72 overflow-auto">
+                  {matches.length ? matches.map((e) => (
+                    <button key={e.id} type="button" onMouseDown={(ev) => { ev.preventDefault(); setForm(f => ({ ...f, email: e.email || '', name: e.full_name })); setPickOpen(false) }}
+                      className="w-full text-left px-3 py-2 hover:bg-blue-600/25">
+                      <div className="text-sm text-white">{e.full_name}</div>
+                      <div className="text-xs text-gray-400">{e.email}{e.department?.name ? ` · ${e.department.name}` : ''}</div>
+                    </button>
+                  )) : <div className="px-3 py-3 text-sm text-gray-400">{people.length ? 'Không có ai khớp (hoặc đã được cấp quyền)' : 'Đang tải danh sách nhân viên…'}</div>}
+                </div>
+              )}
+            </>
+          )}
         </div>
         <div>
           <label className="block text-xs text-gray-400 mb-1">Vai trò</label>
