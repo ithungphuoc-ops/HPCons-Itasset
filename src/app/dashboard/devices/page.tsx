@@ -178,9 +178,11 @@ export default function DevicesPage() {
         </div>
       )}
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-x-auto">
+      {/* Bảng tự cuộn bên trong khung cao vừa màn hình → dòng tiêu đề ghim cố định, chỉ các dòng
+          bên dưới cuộn (Sếp yêu cầu 02/10/2026). Tiêu đề cần nền đặc để không lộ dòng cuộn bên dưới. */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-auto max-h-[calc(100vh-270px)] min-h-[320px]">
         <table className="w-full text-sm min-w-[980px]">
-          <thead>
+          <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-gray-900 [&_th]:shadow-[inset_0_-1px_0_#1f2f3d]">
             <tr className="border-b border-gray-800 text-gray-400 text-left">
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={devices.length > 0 && selected.size === devices.length} onChange={toggleAll} className="accent-blue-500 cursor-pointer" /></th>
               <th className="px-4 py-3 font-medium">{S.fieldLabels.asset_code}</th>
