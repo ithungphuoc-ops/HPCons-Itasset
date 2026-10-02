@@ -7,12 +7,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ChevronRight, Download, Printer, QrCode, Save, Trash2, Undo2, User } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Download, Printer, QrCode, Save, Search, Trash2, Undo2, User, X } from 'lucide-react'
 import DatePicker from '@/components/DatePicker'
 import { useRole } from '@/lib/hooks/useRole'
 import {
   MOVE_DEFS, MOVE_ORDER, STATUS_COLOR, STATUS_LABEL, STATUS_ORDER,
-  fmtDate, todayIso, type MoveType,
+  fmtDate, todayIso, normalizeVi, type MoveType,
 } from '@/lib/kho/config'
 import { computeHolders } from '@/lib/kho/holders'
 import type { DeviceCategory, DeviceStatus } from '@/lib/types'
@@ -57,6 +57,16 @@ const COLS: Record<MoveType, [string, (r: Row) => string][]> = {
   LC: [['Người chuyển', (r) => r.m.info.nguoi || ''], ['Người nhận', (r) => r.m.info.nguoi2 || ''], ['Số lượng', (r) => String(r.qty)], ['Ngày chuyển', (r) => fmtDate(r.m.date)], ['Lý do chuyển', (r) => r.m.info.lydo || ''], ['Tình trạng', (r) => r.condition], ['Phòng ban chuyển', (r) => r.m.info.pb || ''], ['Phòng ban nhận', (r) => r.m.info.pb2 || ''], ['Ghi chú', (r) => r.note]],
 }
 
+// Bộ lọc 4 bảng lịch sử (Sếp yêu cầu 02/10/2026 — phiếu nhiều lên thì lọc cho dễ): lọc theo người nào ở từng bảng
+const PERSON_FILTER: Record<MoveType, { label: string; of: (m: FirestoreMove) => string[] }> = {
+  NK: { label: 'Nhà cung cấp', of: (m) => [m.info.ncc || ''] },
+  XK: { label: 'Người nhận', of: (m) => [m.info.nguoi || ''] },
+  TH: { label: 'Người giao', of: (m) => [m.info.nguoi || ''] },
+  LC: { label: 'Người chuyển / nhận', of: (m) => [m.info.nguoi || '', m.info.nguoi2 || ''] },
+}
+type Flt = { q: string; who: string; from: string; to: string }
+const NO_FLT: Flt = { q: '', who: '', from: '', to: '' }
+
 export default function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -72,6 +82,7 @@ export default function DeviceDetailPage() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [qr, setQr] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  const [flt, setFlt] = useState<Partial<Record<MoveType, Flt>>>({})
   const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }))
   const [preview, setPreview] = useState<PrintableMove | null>(null)
   const [confirmDel, setConfirmDel] = useState(false)
@@ -248,11 +259,42 @@ export default function DeviceDetailPage() {
 
       {/* ===== 4 bảng lịch sử ===== */}
       {MOVE_ORDER.map((t) => {
-        const rows = rowsOf(t)
+        const all = rowsOf(t)
+        const F = flt[t] || NO_FLT
+        const setF = (patch: Partial<Flt>) => setFlt((x) => ({ ...x, [t]: { ...(x[t] || NO_FLT), ...patch } }))
+        const people = [...new Set(all.flatMap((r) => PERSON_FILTER[t].of(r.m)).map((x) => x.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'))
+        const q = normalizeVi(F.q)
+        const rows = all.filter((r) =>
+          (!F.who || PERSON_FILTER[t].of(r.m).some((x) => normalizeVi(x) === normalizeVi(F.who))) &&
+          (!F.from || r.m.date >= F.from) && (!F.to || r.m.date <= F.to) &&
+          (!q || normalizeVi([r.m.so || '', ...COLS[t].map(([, get]) => get(r))].join(' ')).includes(q)))
+        const filtering = !!(F.q || F.who || F.from || F.to)
         return (
           <section key={t} className="bg-gray-900 border border-gray-800 rounded-xl mb-4">
-            <FoldHead open={!!open[t]} onClick={() => toggle(t)} title={MOVE_DEFS[t].history} count={`${rows.length} phiếu`} />
-            {open[t] && <div className="px-5 pb-5"><div className="overflow-x-auto border border-gray-800 rounded-lg">
+            <FoldHead open={!!open[t]} onClick={() => toggle(t)} title={MOVE_DEFS[t].history} count={filtering ? `${rows.length} / ${all.length} phiếu (đang lọc)` : `${all.length} phiếu`} />
+            {open[t] && <div className="px-5 pb-5">
+              {all.length > 0 && (
+                <div className="flex flex-wrap items-end gap-2 mb-3">
+                  <div className="relative flex-1 min-w-[200px] max-w-xs">
+                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                    <input value={F.q} onChange={(e) => setF({ q: e.target.value })} placeholder="Tìm số phiếu, người, lý do, ghi chú…"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+                  </div>
+                  <select value={F.who} onChange={(e) => setF({ who: e.target.value })}
+                    className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+                    <option value="">{PERSON_FILTER[t].label}: Tất cả</option>
+                    {people.map((x) => <option key={x} value={x}>{x}</option>)}
+                  </select>
+                  <div className="w-40"><div className="text-[11px] text-gray-500 mb-0.5">Từ ngày</div><DatePicker value={F.from} onChange={(v) => setF({ from: v })} placeholder="Từ ngày" /></div>
+                  <div className="w-40"><div className="text-[11px] text-gray-500 mb-0.5">Đến ngày</div><DatePicker value={F.to} onChange={(v) => setF({ to: v })} placeholder="Đến ngày" /></div>
+                  {filtering && (
+                    <button type="button" onClick={() => setFlt((x) => ({ ...x, [t]: NO_FLT }))}
+                      className="flex items-center gap-1 border border-gray-700 hover:border-gray-500 text-gray-300 px-3 py-2 rounded-lg text-sm"><X size={14} /> Xoá lọc</button>
+                  )}
+                  <span className="text-xs text-gray-500 ml-auto self-center">Đang hiện {rows.length} / {all.length} phiếu</span>
+                </div>
+              )}
+              <div className="overflow-x-auto border border-gray-800 rounded-lg">
               <table className="w-full text-sm min-w-[720px]">
                 <thead>
                   <tr className="text-left text-xs text-gray-400 border-b border-gray-800 bg-gray-800/30">
@@ -271,7 +313,7 @@ export default function DeviceDetailPage() {
                         {isAdmin && <button title="Xoá phiếu (Admin)" onClick={() => removeMove(r.m)} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14} /></button>}
                       </td>
                     </tr>
-                  )) : <tr><td colSpan={COLS[t].length + 2} className="px-3 py-5 text-center text-gray-500 text-sm">Chưa có dòng nào</td></tr>}
+                  )) : <tr><td colSpan={COLS[t].length + 2} className="px-3 py-5 text-center text-gray-500 text-sm">{all.length ? 'Không có phiếu nào khớp bộ lọc' : 'Chưa có dòng nào'}</td></tr>}
                 </tbody>
               </table>
             </div></div>}

@@ -4,7 +4,7 @@
 // 4 nút lập phiếu ở đầu trang (1 phiếu nhiều thiết bị) + "Thêm thiết bị" (thêm mã vào danh mục).
 // Đợt 2: tên Loại / tên cột / bật-tắt cột / trường bổ sung theo "Sửa giao diện".
 import { useState, useEffect, useMemo } from 'react'
-import { Search, Plus, QrCode, FileSpreadsheet, Package, X, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft } from 'lucide-react'
+import { Search, Plus, QrCode, FileSpreadsheet, Package, X, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, Columns3, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { DeviceStatus, DeviceCategory } from '@/lib/types'
@@ -55,6 +55,8 @@ function columns(S: KhoSettings): { key: string; head: string; right?: boolean; 
   return [...cols.slice(0, at), ...extra, ...cols.slice(at)]
 }
 
+const HIDDEN_KEY = 'khoit-devices-hidden-cols'
+
 const MOVE_BTNS: { t: MoveType; label: string; icon: React.ElementType }[] = [
   { t: 'NK', label: 'Nhập kho', icon: ArrowDownToLine },
   { t: 'XK', label: 'Cấp phát', icon: ArrowUpFromLine },
@@ -65,7 +67,25 @@ const MOVE_BTNS: { t: MoveType; label: string; icon: React.ElementType }[] = [
 export default function DevicesPage() {
   const { canWrite } = useRole()
   const { settings: S } = useKhoSettings()
-  const cols = columns(S)
+  // Ẩn / hiện cột theo TỪNG NGƯỜI (lưu trên máy đang dùng — Sếp yêu cầu 02/10/2026). Chỉ trong phạm vi
+  // các cột Admin đã bật ở "Sửa giao diện"; Mã tài sản luôn hiện để bấm vào xem chi tiết.
+  const [hidden, setHidden] = useState<Set<string>>(new Set())
+  const [colMenu, setColMenu] = useState(false)
+  const allCols = columns(S)
+  const cols = allCols.filter((c) => !hidden.has(c.key))
+  const showCat = !hidden.has('category')
+  const toggleCol = (k: string) => setHidden((prev) => {
+    const s = new Set(prev); if (s.has(k)) s.delete(k); else s.add(k)
+    try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...s])) } catch { /* trình duyệt chặn lưu → chỉ áp dụng phiên này */ }
+    return s
+  })
+  const showAllCols = () => { setHidden(new Set()); try { localStorage.removeItem(HIDDEN_KEY) } catch { /* bỏ qua */ } }
+  useEffect(() => {
+    if (!colMenu) return
+    const close = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('[data-col-menu]')) setColMenu(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [colMenu])
   const router = useRouter()
   const [allDevices, setAllDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
@@ -93,6 +113,7 @@ export default function DevicesPage() {
         const cat = p.get('category') as DeviceCategory | null
         if (st && STATUS_ORDER.includes(st)) setFilterStatus(st)
         if (cat) setFilterCategory(cat)
+        try { const raw = localStorage.getItem(HIDDEN_KEY); if (raw) setHidden(new Set(JSON.parse(raw) as string[])) } catch { /* bỏ qua */ }
       }
     })
     return () => { alive = false }
@@ -166,6 +187,26 @@ export default function DevicesPage() {
           <option value="">{S.fieldLabels.status}: Tất cả</option>
           {STATUS_ORDER.map((k) => <option key={k} value={k}>{STATUS_LABEL[k]}</option>)}
         </select>
+        <div className="relative" data-col-menu>
+          <button type="button" onClick={() => setColMenu(!colMenu)}
+            className={`flex items-center gap-2 bg-gray-900 border rounded-lg px-3 py-2.5 text-sm ${hidden.size ? 'border-blue-500 text-blue-300' : 'border-gray-700 text-white'}`}>
+            <Columns3 size={15} /> Cột{hidden.size ? ` (ẩn ${hidden.size})` : ''} <ChevronDown size={14} />
+          </button>
+          {colMenu && (
+            <div className="absolute right-0 top-full mt-1.5 z-30 w-60 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-2">
+              <div className="px-2 pb-1.5 text-[11px] text-gray-400">Tick để hiện · bỏ tick để ẩn (chỉ áp dụng cho bạn)</div>
+              <label className="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-500"><input type="checkbox" checked disabled className="accent-blue-500" /> {S.fieldLabels.asset_code} (luôn hiện)</label>
+              {[{ key: 'category', head: S.fieldLabels.category }, ...allCols].map((c) => (
+                <label key={c.key} className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-white hover:bg-gray-700/60 cursor-pointer">
+                  <input type="checkbox" className="accent-blue-500" checked={!hidden.has(c.key)} onChange={() => toggleCol(c.key)} /> {c.head}
+                </label>
+              ))}
+              {hidden.size > 0 && (
+                <button type="button" onClick={showAllCols} className="mt-1 w-full text-center text-sm text-blue-400 hover:text-blue-300 py-1.5 border-t border-gray-700">Hiện tất cả</button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {selected.size > 0 && (
@@ -186,15 +227,15 @@ export default function DevicesPage() {
             <tr className="border-b border-gray-800 text-gray-400 text-left">
               <th className="px-4 py-3 w-10"><input type="checkbox" checked={devices.length > 0 && selected.size === devices.length} onChange={toggleAll} className="accent-blue-500 cursor-pointer" /></th>
               <th className="px-4 py-3 font-medium">{S.fieldLabels.asset_code}</th>
-              <th className="px-4 py-3 font-medium">{S.fieldLabels.category}</th>
+              {showCat && <th className="px-4 py-3 font-medium">{S.fieldLabels.category}</th>}
               {cols.map((c) => <th key={c.key} className={`px-4 py-3 font-medium whitespace-nowrap ${c.right ? 'text-right' : ''}`}>{c.head}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={cols.length + 3} className="px-4 py-16 text-center text-gray-500">Đang tải...</td></tr>
+              <tr><td colSpan={cols.length + (showCat ? 3 : 2)} className="px-4 py-16 text-center text-gray-500">Đang tải...</td></tr>
             ) : devices.length === 0 ? (
-              <tr><td colSpan={cols.length + 3} className="px-4 py-16 text-center text-gray-500"><Package size={32} className="mx-auto mb-3 opacity-30" />Không có thiết bị nào khớp</td></tr>
+              <tr><td colSpan={cols.length + (showCat ? 3 : 2)} className="px-4 py-16 text-center text-gray-500"><Package size={32} className="mx-auto mb-3 opacity-30" />Không có thiết bị nào khớp</td></tr>
             ) : devices.map((d) => {
               return (
                 <tr key={d.id} onClick={(e) => { if (!(e.target as HTMLElement).closest('input')) router.push(`/dashboard/devices/${d.id}`) }}
@@ -203,7 +244,7 @@ export default function DevicesPage() {
                     <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSelect(d.id)} className="accent-blue-500 cursor-pointer" />
                   </td>
                   <td className="px-4 py-3 font-mono text-blue-400"><Link href={`/dashboard/devices/${d.id}`}>{d.asset_code}</Link></td>
-                  <td className="px-4 py-3 text-gray-300">{catLabel(S, d.category)}</td>
+                  {showCat && <td className="px-4 py-3 text-gray-300">{catLabel(S, d.category)}</td>}
                   {cols.map((c) => <td key={c.key} className={`px-4 py-3 ${c.right ? 'text-right' : ''}`}>{c.cell(d)}</td>)}
                 </tr>
               )

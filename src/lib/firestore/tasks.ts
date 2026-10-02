@@ -60,6 +60,24 @@ export async function setTaskCompleted(id: string, completed: boolean): Promise<
   revalidateTag(TAG_TASKS, { expire: 0 });
 }
 
+/**
+ * Giao Phụ trách cho công việc CHƯA phân công (nút ＋ ở danh sách, Sếp chốt 02/10/2026).
+ * Đã có người phụ trách thì KHÔNG đổi được — kiểm tra trong transaction để 2 người bấm cùng lúc
+ * không giao đè lên nhau. Trả về false nếu việc đã có người.
+ */
+export async function assignTaskIfEmpty(id: string, assigneeName: string): Promise<boolean> {
+  const ref = collection().doc(id);
+  const ok = await adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new Error("Không tìm thấy công việc");
+    if ((snap.data() as FirestoreTask).assigneeName) return false;
+    tx.set(ref, { assigneeName, updatedAt: new Date().toISOString() }, { merge: true });
+    return true;
+  });
+  if (ok) revalidateTag(TAG_TASKS, { expire: 0 });
+  return ok;
+}
+
 export async function deleteTask(id: string): Promise<void> {
   await collection().doc(id).delete();
   revalidateTag(TAG_TASKS, { expire: 0 });
