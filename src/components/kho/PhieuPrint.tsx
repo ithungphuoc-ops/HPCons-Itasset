@@ -13,7 +13,7 @@ export interface PrintableMove {
   type: MoveType
   so: string | null
   date: string
-  info: Partial<Record<'ncc' | 'nguoi' | 'pb' | 'nguoi2' | 'pb2' | 'lydo' | 'dien', string>>
+  info: Partial<Record<'ncc' | 'mst' | 'nguoi' | 'pb' | 'nguoi2' | 'pb2' | 'lydo' | 'dien', string>>
   dnSo: string | null
   dnDate: string | null
   lines: { assetCode: string; name: string; serial: string | null; qty: number; condition: string; note: string | null }[]
@@ -40,7 +40,7 @@ export function PhieuSheet({ move, draft, cfg }: { move: PrintableMove; draft?: 
   ) : null
   // Các dòng thông tin đầu phiếu theo từng loại (dòng "Theo đề nghị" chèn ngay sau dòng đầu, như mẫu)
   const rows: React.ReactNode[][] =
-    move.type === 'NK' ? [[<Info key="a" k="Nhà cung cấp" v={i.ncc} />], [<Info key="b" k="Người nhập" v={i.nguoi} />, <span key="c" style={{ flex: 1 }}>{kho}</span>], [<Info key="d" k="Diễn giải" v={i.dien} />]]
+    move.type === 'NK' ? [[<Info key="a" k="Nhà cung cấp" v={i.ncc} />, <Info key="m" k="Mã số thuế" v={i.mst} />], [<Info key="b" k="Người nhập" v={i.nguoi} />, <span key="c" style={{ flex: 1 }}>{kho}</span>], [<Info key="d" k="Diễn giải" v={i.dien} />]]
     : move.type === 'LC' ? [[<Info key="a" k="Người chuyển" v={i.nguoi} />, <Info key="b" k="Phòng ban chuyển" v={i.pb} />], [<Info key="c" k="Người nhận" v={i.nguoi2} />, <Info key="d" k="Phòng ban nhận" v={i.pb2} />], [<Info key="e" k="Lý do chuyển" v={i.lydo} />, <span key="f" style={{ flex: 1 }}>{kho}</span>]]
     : [[<Info key="a" k={move.type === 'XK' ? 'Họ và tên người nhận' : 'Họ và tên người giao trả'} v={i.nguoi} />], [<Info key="b" k="Phòng ban" v={i.pb} />, <span key="c" style={{ flex: 1 }}>{kho}</span>], [<Info key="d" k={move.type === 'XK' ? 'Lý do cấp phát' : 'Lý do thu hồi'} v={i.lydo} />]]
 

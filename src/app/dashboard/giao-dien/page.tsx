@@ -42,7 +42,7 @@ function RowBtns({ i, n, onMove, onDel, delTitle }: { i: number; n: number; onMo
 
 const SAMPLE: PrintableMove = {
   type: 'XK', so: 'XK260001', date: '2026-09-30', dnSo: '000000163', dnDate: '2026-09-26',
-  info: { nguoi: 'Nguyễn Văn A', pb: 'Phòng Hành chính Nhân sự - IT', lydo: 'Cấp cho nhân viên mới', ncc: 'Nhà cung cấp mẫu', nguoi2: 'Trần Thị B', pb2: 'Bộ phận Thi công', dien: 'Ghi chú mẫu' },
+  info: { nguoi: 'Nguyễn Văn A', pb: 'Phòng Hành chính Nhân sự - IT', lydo: 'Cấp cho nhân viên mới', ncc: 'Nhà cung cấp mẫu', mst: '0312345678',nguoi2: 'Trần Thị B', pb2: 'Bộ phận Thi công', dien: 'Ghi chú mẫu' },
   lines: [
     { assetCode: 'LT-001', name: 'Laptop · HP · HP Zbook', serial: 'SN123', qty: 1, condition: 'Mới', note: null },
     { assetCode: 'MS-01', name: 'Phụ kiện · Logitech · M331', serial: null, qty: 2, condition: 'Mới', note: 'Kèm pin' },

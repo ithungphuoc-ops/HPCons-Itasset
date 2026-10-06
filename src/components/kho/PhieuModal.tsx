@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Plus, Trash2, Printer, Save } from 'lucide-react'
 import DatePicker from '@/components/DatePicker'
-import { MOVE_DEFS, normalizeVi, todayIso, type MoveType } from '@/lib/kho/config'
+import { MOVE_DEFS, TAX_CODE_RE, normalizeVi, todayIso, type MoveType } from '@/lib/kho/config'
 import { deviceNameS } from '@/lib/kho/settings'
 import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 import type { DeviceCategory } from '@/lib/types'
@@ -84,7 +84,11 @@ export default function PhieuModal({ type, presetDeviceId, onClose, onSaved }: {
     const e: Record<string, boolean> = {}
     const msgs: string[] = []
     if (!date) { e.date = true; msgs.push('Chưa chọn ngày') }
-    def.fields.forEach((f) => { if (f.required && !String(info[f.key] || '').trim()) { e[f.key] = true; msgs.push('Chưa nhập ' + f.label.toLowerCase()) } })
+    def.fields.forEach((f) => {
+      const v = String(info[f.key] || '').trim()
+      if (f.required && !v) { e[f.key] = true; msgs.push('Chưa nhập ' + f.label.toLowerCase()) }
+      else if (v && f.kind === 'tax' && !TAX_CODE_RE.test(v)) { e[f.key] = true; msgs.push(f.label + ' phải gồm 10 số (chi nhánh: 10 số-3 số)') }
+    })
     const bad: string[] = []
     const sum = new Map<string, number>()
     lines.forEach((l, i) => {
@@ -164,8 +168,13 @@ export default function PhieuModal({ type, presetDeviceId, onClose, onSaved }: {
             {def.fields.map((f) => (
               <div key={f.key} className={f.wide ? 'md:col-span-2' : ''}>
                 <label className="block text-xs text-gray-400 mb-1">{f.label}{f.required && <b className="text-red-400"> *</b>}</label>
-                <input className={`${input} ${bd(f.key)}`} value={info[f.key] || ''} placeholder="Gõ tay"
-                  onChange={(e) => { setInfo({ ...info, [f.key]: e.target.value }); setErrs((x) => ({ ...x, [f.key]: false })) }} />
+                <input className={`${input} ${bd(f.key)}`} value={info[f.key] || ''}
+                  placeholder={f.kind === 'tax' ? 'VD 0312345678 (không bắt buộc)' : 'Gõ tay'}
+                  inputMode={f.kind === 'tax' ? 'numeric' : undefined} maxLength={f.kind === 'tax' ? 14 : undefined}
+                  onChange={(e) => {
+                    const v = f.kind === 'tax' ? e.target.value.replace(/[^\d-]/g, '') : e.target.value
+                    setInfo({ ...info, [f.key]: v }); setErrs((x) => ({ ...x, [f.key]: false }))
+                  }} />
               </div>
             ))}
             {settings.print.showDN && (

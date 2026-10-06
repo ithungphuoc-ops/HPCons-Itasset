@@ -103,7 +103,7 @@ export interface FirestoreMove {
   type: MoveType;
   so: string | null;     // NK260001… ; null = dữ liệu cũ chuyển sang
   date: string;          // yyyy-mm-dd (người dùng chọn)
-  info: Partial<Record<"ncc" | "nguoi" | "pb" | "nguoi2" | "pb2" | "lydo" | "dien", string>>;
+  info: Partial<Record<"ncc" | "mst" | "nguoi" | "pb" | "nguoi2" | "pb2" | "lydo" | "dien", string>>;
   dnSo: string | null;   // Theo đề nghị số
   dnDate: string | null;
   lines: MoveLine[];

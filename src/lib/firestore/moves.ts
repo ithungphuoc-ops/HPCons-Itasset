@@ -5,7 +5,7 @@ import { TAG_DEVICES } from "@/lib/firestore/devices";
 import { computeHolders } from "@/lib/kho/holders";
 import { getKhoSettings } from "@/lib/firestore/settings";
 import { deviceNameS } from "@/lib/kho/settings";
-import { MOVE_DEFS, normalizeVi, stockHeld, stockLeft, type StockNumbers } from "@/lib/kho/config";
+import { MOVE_DEFS, TAX_CODE_RE, normalizeVi, stockHeld, stockLeft, type StockNumbers } from "@/lib/kho/config";
 import type { DeviceStatus, FirestoreDevice, FirestoreMove, MoveLine, MoveType } from "@/lib/firestore/types";
 
 // Phiếu Nhập kho / Cấp phát / Thu hồi / Luân chuyển (Kho Tổng, 30/09/2026).
@@ -75,6 +75,7 @@ export async function createMove(input: CreateMoveInput, createdBy: string | nul
   for (const f of def.fields) {
     const v = String(input.info?.[f.key] ?? "").trim();
     if (f.required && !v) throw new MoveError(`Chưa nhập ${f.label.toLowerCase()}`);
+    if (v && f.kind === "tax" && !TAX_CODE_RE.test(v)) throw new MoveError(`${f.label} phải gồm 10 số (chi nhánh: 10 số-3 số)`);
     if (v) info[f.key] = v.slice(0, 300);
   }
   if (!Array.isArray(input.lines) || input.lines.length === 0) throw new MoveError("Phiếu chưa có thiết bị nào");

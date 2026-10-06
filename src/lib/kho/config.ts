@@ -57,8 +57,10 @@ export type MoveType = 'NK' | 'XK' | 'TH' | 'LC'
 export const MOVE_ORDER: MoveType[] = ['NK', 'XK', 'TH', 'LC']
 
 // Các ô thông tin đầu phiếu (gõ tay). key lưu trong move.info
-export type InfoKey = 'ncc' | 'nguoi' | 'pb' | 'nguoi2' | 'pb2' | 'lydo' | 'dien'
-export interface InfoField { key: InfoKey; label: string; required: boolean; wide?: boolean }
+export type InfoKey = 'ncc' | 'mst' | 'nguoi' | 'pb' | 'nguoi2' | 'pb2' | 'lydo' | 'dien'
+// kind 'tax' = mã số thuế: chỉ nhận số + "-", đúng dạng 10 số hoặc 10 số-3 số (chi nhánh)
+export interface InfoField { key: InfoKey; label: string; required: boolean; wide?: boolean; kind?: 'tax' }
+export const TAX_CODE_RE = /^\d{10}(-\d{3})?$/
 
 export interface MoveDef {
   label: string          // tên tab / nút
@@ -74,6 +76,7 @@ export const MOVE_DEFS: Record<MoveType, MoveDef> = {
     label: 'Nhập kho', history: 'Lịch sử nhập kho', title: 'PHIẾU NHẬP KHO', kho: 'Nhập tại kho',
     fields: [
       { key: 'ncc', label: 'Nhà cung cấp', required: true },
+      { key: 'mst', label: 'Mã số thuế NCC', required: false, kind: 'tax' }, // Sếp thêm 06/10/2026
       { key: 'nguoi', label: 'Người nhập', required: true },
       { key: 'dien', label: 'Diễn giải', required: false, wide: true },
     ],
