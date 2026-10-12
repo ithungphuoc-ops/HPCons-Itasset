@@ -38,7 +38,13 @@ export default function NewTaskPage() {
   const [devices, setDevices] = useState<DeviceOption[]>([])
 
   useEffect(() => {
-    fetch('/api/devices').then((res) => res.json()).then((json) => setDevices(json.data || []))
+    fetch('/api/devices').then((res) => res.json()).then((json) => {
+      const list = (json.data || []) as DeviceOption[]
+      setDevices(list)
+      // Mở từ trang chi tiết thiết bị ("Tạo công việc") → chọn sẵn thiết bị đó (10/10/2026)
+      const pre = new URLSearchParams(window.location.search).get('deviceId')
+      if (pre && list.some((d) => d.id === pre)) setDeviceId(pre)
+    })
   }, [])
 
   async function handleSubmit(e: React.FormEvent) {

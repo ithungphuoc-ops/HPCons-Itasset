@@ -41,6 +41,12 @@ export default function TasksPage() {
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
+  // Cột "Thiết bị" (10/10/2026): mã tài sản của thiết bị gắn với công việc — danh mục có cache 30s
+  const [codes, setCodes] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    fetch('/api/devices').then((r) => r.json()).then((j) => setCodes(new Map(((j.data || []) as { id: string; asset_code: string }[]).map((d) => [d.id, d.asset_code])))).catch(() => {})
+  }, [])
+
   const withStatus = useMemo(
     () => tasks.map((t) => ({ task: t, status: computeTaskStatus(t.dueDate, t.completed) })),
     [tasks],
@@ -155,6 +161,7 @@ export default function TasksPage() {
             <tr className="border-b border-gray-800 text-gray-400 text-left">
               <th className="px-4 py-3 font-medium">Loại</th>
               <th className="px-4 py-3 font-medium">Tiêu đề</th>
+              <th className="px-4 py-3 font-medium">Thiết bị</th>
               <th className="px-4 py-3 font-medium">Người yêu cầu</th>
               <th className="px-4 py-3 font-medium">Phụ trách</th>
               <th className="px-4 py-3 font-medium">Ưu tiên</th>
@@ -165,9 +172,9 @@ export default function TasksPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="px-4 py-16 text-center text-gray-500">Đang tải...</td></tr>
+              <tr><td colSpan={9} className="px-4 py-16 text-center text-gray-500">Đang tải...</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-16 text-center text-gray-500">Chưa có công việc nào</td></tr>
+              <tr><td colSpan={9} className="px-4 py-16 text-center text-gray-500">Chưa có công việc nào</td></tr>
             ) : rows.map(({ task, status }) => {
               const Icon = TYPE_ICON[task.type]
               return (
@@ -179,6 +186,11 @@ export default function TasksPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-white">{task.title}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {task.deviceId
+                      ? <Link href={`/dashboard/devices/${task.deviceId}`} className="font-mono text-blue-400 hover:underline">{codes.get(task.deviceId) || 'Xem'}</Link>
+                      : <span className="text-gray-600">—</span>}
+                  </td>
                   <td className="px-4 py-3 text-gray-300">{task.requesterName}</td>
                   <td className="px-4 py-3 text-gray-300">
                     {task.assigneeName ? task.assigneeName : (

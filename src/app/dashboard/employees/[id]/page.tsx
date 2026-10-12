@@ -1,12 +1,14 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Mail, Phone, Building2, Laptop, Monitor, Cpu, Package, Calendar, Pencil, Trash2, Save, X, QrCode, ExternalLink, Plus } from 'lucide-react'
+import { ArrowLeft, Mail, Phone, Building2, Laptop, Monitor, Cpu, Package, Calendar, Pencil, Trash2, Save, X, QrCode, ExternalLink, Plus, RotateCcw, ArrowRightLeft } from 'lucide-react'
 import Link from 'next/link'
 import { useRole } from '@/lib/hooks/useRole'
 import { reportActivity } from '@/lib/reportActivity'
 import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 import { catLabel } from '@/lib/kho/settings'
+import PhieuModal, { SpecChips } from '@/components/kho/PhieuModal'
+import type { MoveType } from '@/lib/kho/config'
 
 
 interface Employee {
@@ -17,8 +19,8 @@ interface Employee {
   hpcore_uid?: string | null
 }
 interface Assignment {
-  id: string; assigned_date: string; is_active: boolean
-  device: { id: string; asset_code: string; brand: string; model: string; category: string; status: string }
+  id: string; assigned_date: string; is_active: boolean; quantity?: number
+  device: { id: string; asset_code: string; brand: string; model: string; category: string; status: string; specs?: Record<string, string> }
 }
 
 const CATEGORY_ICON: Record<string, React.ElementType> = {
@@ -40,6 +42,10 @@ export default function EmployeeDetailPage() {
   const [error, setError] = useState('')
   const { canWrite } = useRole()
   const { settings: KS } = useKhoSettings()
+  // Lập phiếu ngay tại nhân viên (10/10/2026): Cấp phát cho người này · Thu hồi / Chuyển từng thiết bị
+  const [phieu, setPhieu] = useState<{ type: MoveType; deviceId?: string } | null>(null)
+  const [reload, setReload] = useState(0)
+  const [flash, setFlash] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -63,7 +69,7 @@ export default function EmployeeDetailPage() {
       setLoading(false)
     }
     load()
-  }, [id, router])
+  }, [id, router, reload])
 
   async function handleSave() {
     setSaving(true)
@@ -255,12 +261,12 @@ export default function EmployeeDetailPage() {
             Thiết bị đang sử dụng
             <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full">{activeAssignments.length}</span>
           </h3>
-          {/* Kho Tổng (30/09/2026): cấp phát bằng phiếu ở trang Thiết bị (có in phiếu ký nhận) */}
+          {/* 10/10/2026: mở phiếu Cấp phát điền sẵn người này (vẫn in phiếu ký nhận như cũ) */}
           {canWrite && (
-            <Link href="/dashboard/devices"
+            <button onClick={() => setPhieu({ type: 'XK' })}
               className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
-              <Plus size={13} /> Cấp phát ở trang Thiết bị
-            </Link>
+              <Plus size={13} /> Cấp phát cho {employee.full_name}
+            </button>
           )}
         </div>
         {activeAssignments.length === 0 ? (
@@ -272,20 +278,31 @@ export default function EmployeeDetailPage() {
             {activeAssignments.map(a => {
               const Icon = CATEGORY_ICON[a.device.category] || Package
               return (
-                <Link key={a.id} href={`/dashboard/devices/${a.device.id}`}
-                  className="flex items-center gap-4 bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors group">
-                  <div className="w-9 h-9 bg-gray-800 rounded-lg flex items-center justify-center shrink-0">
-                    <Icon size={16} className="text-gray-400" />
+                <div key={a.id} className="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <Link href={`/dashboard/devices/${a.device.id}`} className="flex items-center gap-4 flex-1 min-w-[200px] group">
+                      <div className="w-9 h-9 bg-gray-800 rounded-lg flex items-center justify-center shrink-0">
+                        <Icon size={16} className="text-gray-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm group-hover:text-blue-400 transition-colors">{a.device.brand} {a.device.model}{(a.quantity || 1) > 1 && <span className="text-gray-400"> ×{a.quantity}</span>}</div>
+                        <div className="text-xs text-gray-500">{catLabel(KS, a.device.category)} · {a.device.asset_code}</div>
+                      </div>
+                    </Link>
+                    <div className="text-xs text-gray-500 flex items-center gap-1 shrink-0">
+                      <Calendar size={11} />
+                      {new Date(a.assigned_date).toLocaleDateString('vi-VN')}
+                    </div>
+                    {canWrite && (
+                      <div className="flex gap-2 shrink-0">
+                        <button onClick={() => setPhieu({ type: 'TH', deviceId: a.device.id })} className="flex items-center gap-1 border border-gray-700 hover:border-amber-500 text-amber-300 px-2.5 py-1 rounded-lg text-xs"><RotateCcw size={12} /> Thu hồi</button>
+                        <button onClick={() => setPhieu({ type: 'LC', deviceId: a.device.id })} className="flex items-center gap-1 border border-gray-700 hover:border-purple-500 text-purple-300 px-2.5 py-1 rounded-lg text-xs"><ArrowRightLeft size={12} /> Chuyển</button>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm group-hover:text-blue-400 transition-colors">{a.device.brand} {a.device.model}</div>
-                    <div className="text-xs text-gray-500">{catLabel(KS, a.device.category)} · {a.device.asset_code}</div>
-                  </div>
-                  <div className="text-xs text-gray-500 flex items-center gap-1 shrink-0">
-                    <Calendar size={11} />
-                    {new Date(a.assigned_date).toLocaleDateString('vi-VN')}
-                  </div>
-                </Link>
+                  {/* Thông số đi kèm thiết bị (chỉ xem) */}
+                  <div className="flex flex-wrap gap-1.5 mt-2.5 pl-[52px]"><SpecChips S={KS} d={a.device} max={5} /></div>
+                </div>
               )
             })}
           </div>
@@ -314,6 +331,15 @@ export default function EmployeeDetailPage() {
           </div>
         </div>
       )}
+
+      {phieu && (
+        <PhieuModal type={phieu.type} presetDeviceId={phieu.deviceId} presetPerson={employee.full_name} onClose={() => setPhieu(null)}
+          onSaved={(m, x) => {
+            setPhieu(null); setReload((n) => n + 1)
+            setFlash(`Đã lưu phiếu ${m.so}${x?.repairCreated ? ` · đã tạo ${x.repairCreated} Công việc Sửa chữa` : ''}`); setTimeout(() => setFlash(''), 3000)
+          }} />
+      )}
+      {flash && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-800 border border-gray-600 px-4 py-2.5 rounded-xl text-sm shadow-xl">{flash}</div>}
     </div>
   )
 }

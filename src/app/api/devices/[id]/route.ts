@@ -5,13 +5,16 @@ import {
   updateDevice,
   deleteDevice,
   toDeviceJson,
+  specsOf,
+  listAllDevices,
 } from '@/lib/firestore/devices'
 import { countMovesForDevice, listMovesForDevice } from '@/lib/firestore/moves'
 import { getActiveAssignmentForDevice } from '@/lib/firestore/assignments'
-import { requireSession, requireWriteAccess } from '@/lib/session'
-import { STATUS_ORDER } from '@/lib/kho/config'
+import { isAdmin, requireSession, requireWriteAccess } from '@/lib/session'
+import { STATUS_ORDER, assetCodeError, normalizeVi } from '@/lib/kho/config'
 import { getKhoSettings } from '@/lib/firestore/settings'
-import type { DeviceCategory, DeviceStatus } from '@/lib/firestore/types'
+import { catLabel, missingSpecs, specFieldsOf } from '@/lib/kho/settings'
+import type { DeviceCategory, DeviceStatus, SpecLogEntry } from '@/lib/firestore/types'
 
 // Chi tiết thiết bị + toàn bộ phiếu có thiết bị này (1 query array-contains)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -35,16 +38,21 @@ const date = (v: unknown) => {
 
 // Sửa "Thông tin chung" + Thông số kĩ thuật (bấm Lưu ở trang chi tiết). KHÔNG sửa được số tồn
 // ở đây — số tồn chỉ đổi qua phiếu (lib/firestore/moves.ts).
+// 10/10/2026 — thông số khoá: Mã · Loại · Hãng · Model · Seri + ô thông số ĐÃ CÓ giá trị chỉ Admin
+// sửa được và phải ghi lý do (body.reason); ô đang trống ai có quyền ghi cũng điền được. Mọi thay
+// đổi các ô này ghi vào specsLog. Bảo hành, trạng thái, trường bổ sung vẫn sửa như cũ.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  let session
   try {
-    await requireWriteAccess()
+    session = await requireWriteAccess()
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 403 })
   }
 
   try {
     const { id } = await params
-    const body = await req.json()
+    const body = await req.json().catch(() => null)
+    if (!body || typeof body !== 'object') return NextResponse.json({ error: 'Dữ liệu không hợp lệ' }, { status: 400 })
     const current = await getDeviceById(id)
     if (!current) return NextResponse.json({ error: 'Không tìm thấy thiết bị' }, { status: 404 })
 
@@ -53,7 +61,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const code = str(body.asset_code)
       if (!code) return NextResponse.json({ error: 'Mã tài sản không được để trống' }, { status: 400 })
       if (code !== current.assetCode) {
-        const dup = await findDeviceByAssetCode(code)
+        const codeErr = assetCodeError(code)
+        if (codeErr) return NextResponse.json({ error: codeErr }, { status: 400 })
+        // Trùng theo kiểu bỏ dấu / không phân biệt hoa thường (trừ chính nó) + khớp chính xác
+        const dup = (await listAllDevices()).find((d) => d.id !== id && normalizeVi(d.assetCode) === normalizeVi(code)) || (await findDeviceByAssetCode(code))
         if (dup && dup.id !== id) return NextResponse.json({ error: `Mã tài sản "${code}" đã có trong danh mục` }, { status: 400 })
       }
       update.assetCode = code
@@ -90,6 +101,41 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const extra: Record<string, string> = {}
       for (const [k, v] of Object.entries(body.extra as Record<string, unknown>)) if (keys.has(k)) extra[k] = (str(v) ?? '').slice(0, 300)
       update.extra = extra
+    }
+
+    // ---- Khoá thông số: tách thay đổi thành "điền ô trống" (ai cũng được) và "sửa giá trị đã có" (Admin + lý do)
+    const settings = await getKhoSettings()
+    const L = settings.fieldLabels
+    const curSpecs = specsOf(current)
+    const edits: { field: string; from: string; to: string }[] = []
+    const fills: { field: string; from: string; to: string }[] = []
+    const track = (label: string, from: string | null | undefined, to: string | null | undefined) => {
+      const a = (from ?? '').trim(), b = (to ?? '').trim()
+      if (a === b) return
+      ;(a ? edits : fills).push({ field: label, from: a, to: b })
+    }
+    if (update.assetCode !== undefined) track(L.asset_code, current.assetCode, update.assetCode)
+    if (update.category !== undefined) track(L.category, catLabel(settings, current.category), catLabel(settings, update.category))
+    if (update.brand !== undefined) track(L.brand, current.brand, update.brand)
+    if (update.model !== undefined) track(L.model, current.model, update.model)
+    if (update.serialNumber !== undefined) track(L.serial_number, current.serialNumber, update.serialNumber)
+    if (update.specs) {
+      const labelOf = (k: string) => specFieldsOf(settings, update.category ?? current.category).find((f) => f.key === k)?.label || k
+      for (const [k, v] of Object.entries(update.specs)) track(labelOf(k), curSpecs[k], v)
+    }
+    const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 300) : ''
+    if (edits.length && !isAdmin(session)) {
+      return NextResponse.json({ error: `Thông số đã khoá — chỉ Admin sửa được (${edits.map((c) => c.field).join(', ')}). Ô còn trống thì điền được.` }, { status: 403 })
+    }
+    if (edits.length && !reason) return NextResponse.json({ error: 'Sửa thông số đã khoá phải ghi lý do' }, { status: 400 })
+    const now = new Date().toISOString()
+    const logs: SpecLogEntry[] = []
+    if (fills.length) logs.push({ at: now, by: session.email, kind: 'fill', reason: null, changes: fills })
+    if (edits.length) logs.push({ at: now, by: session.email, kind: 'edit', reason, changes: edits })
+    if (logs.length) update.specsLogAdd = logs
+    // Thiết bị cũ vừa đủ thông số bắt buộc lần đầu → khoá từ lúc này
+    if (!current.specsLock && !missingSpecs(settings, update.category ?? current.category, { ...curSpecs, ...(update.specs || {}) }).length) {
+      update.specsLock = { at: now, by: session.email, so: null, via: 'fill' }
     }
 
     await updateDevice(id, update)

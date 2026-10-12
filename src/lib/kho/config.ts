@@ -42,6 +42,14 @@ export const SPEC_FIELDS: Partial<Record<BuiltinCategory, string[]>> = {
   pc: ['CPU', 'Main', 'Ram', 'Ổ cứng', 'VGA', 'Nguồn', 'Tản', 'Case'],
 }
 
+// Thông số BẮT BUỘC khi nhập kho (Sếp duyệt demo 10/10/2026) — mặc định; Admin đổi được ở Sửa giao
+// diện (tick "Bắt buộc khi nhập kho"). Cấu hình đã lưu từ trước chưa có dấu tick → lấy theo đây.
+export const SPEC_REQUIRED: Partial<Record<BuiltinCategory, string[]>> = {
+  laptop: ['CPU', 'Ram', 'Ổ cứng', 'VGA', 'Màn hình', 'Hệ điều hành'],
+  pc: ['CPU', 'Main', 'Ram', 'Ổ cứng', 'Nguồn'],
+  monitor: ['Kích cỡ màn hình', 'Tấm nền', 'Tần số quét', 'Độ phân giải'],
+}
+
 // Dữ liệu cũ (laptopSpecs/monitorSpecs thời Supabase) → tên trường mới, để hiện được ngay khi chưa
 // có `specs` mới. Chỉ dùng để ĐỌC; lần Lưu đầu tiên sẽ ghi sang `specs`.
 export const LEGACY_SPEC_MAP: Partial<Record<string, Record<string, string>>> = {
@@ -124,6 +132,15 @@ export const PRINT_DEFAULTS = {
 }
 
 /* ---------- tiện ích dùng chung ---------- */
+// Mã tài sản: tối đa 60 ký tự, không có "/" (Firestore) và không dạng __x__. So trùng luôn theo
+// normalizeVi (bỏ dấu, không phân biệt hoa/thường) — "LT-001" và "lt-001" là CÙNG 1 mã.
+export const ASSET_CODE_MAX = 60
+export function assetCodeError(code: string): string | null {
+  if (!code) return 'Chưa nhập mã tài sản'
+  if (code.length > ASSET_CODE_MAX) return `Mã tài sản tối đa ${ASSET_CODE_MAX} ký tự`
+  if (code.includes('/') || /^__.*__$/.test(code)) return `Mã tài sản "${code}" không hợp lệ (không dùng dấu "/")`
+  return null
+}
 export function normalizeVi(s: string): string {
   return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, m => (m === 'đ' ? 'd' : 'D')).toLowerCase().trim().replace(/\s+/g, ' ')
 }

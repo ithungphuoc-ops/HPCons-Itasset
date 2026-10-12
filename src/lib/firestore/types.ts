@@ -84,6 +84,19 @@ export interface FirestoreDevice {
   stock?: { in: number; out: number; back: number; move: number } | null;
   // Trường bổ sung ở Thông tin chung do Admin thêm (Đợt 2) — key = ExtraField.key (lib/kho/settings.ts)
   extra?: Record<string, string> | null;
+  // ---- Thông số khoá (10/10/2026) ----
+  // Mã · Loại · Hãng · Model · Seri + ô thông số ĐÃ CÓ giá trị chỉ Admin sửa được (kèm lý do); ô trống
+  // ai có quyền ghi cũng điền được. specsLock = lúc thiết bị đủ thông số bắt buộc lần đầu (nhập kho /
+  // thêm thiết bị / bổ sung) — chỉ để hiện "khoá theo phiếu …", không quyết định quyền sửa.
+  specsLock?: { at: string; by: string | null; so: string | null; via: "NK" | "add" | "fill" } | null;
+  specsLog?: SpecLogEntry[] | null;
+}
+export interface SpecLogEntry {
+  at: string;
+  by: string | null;
+  kind: "fill" | "edit";         // fill = điền ô đang trống · edit = Admin sửa giá trị đã có (có lý do)
+  reason: string | null;
+  changes: { field: string; from: string; to: string }[];
 }
 
 // stock_moves/{id} — 1 PHIẾU nhập kho / cấp phát (xuất kho) / thu hồi / luân chuyển, gồm nhiều

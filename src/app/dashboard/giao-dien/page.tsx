@@ -163,19 +163,23 @@ export default function GiaoDienPage() {
             <label className="block text-xs text-gray-400 mb-1">Tên Loại</label>
             <input className={input + ' mb-4 max-w-sm'} value={cat.label} onChange={(e) => set({ categories: upd(D.categories, ci, { label: e.target.value }) })} />
             <h2 className="font-semibold mb-1">Trường Thông số kĩ thuật của &quot;{cat.label}&quot;</h2>
-            <p className="text-xs text-gray-500 mb-3">Đổi tên trường không mất dữ liệu đã nhập. Xoá trường thì giá trị cũ vẫn giữ trong thiết bị và hiện là &quot;trường cũ&quot;.</p>
+            <p className="text-xs text-gray-500 mb-3">Đổi tên trường không mất dữ liệu đã nhập. Xoá trường thì giá trị cũ vẫn giữ trong thiết bị và hiện là &quot;trường cũ&quot;. Tick <b className="text-gray-300">Bắt buộc</b> = phiếu Nhập kho phải điền ô này mới lưu được; thiết bị thiếu ô bắt buộc hiện nhãn &quot;Thiếu thông số&quot;.</p>
             <div className="space-y-1.5">
               {cat.specs.map((s, i) => (
                 <div key={s.key} className="flex items-center gap-2">
                   <span className="text-xs text-gray-500 w-6 text-right">{i + 1}</span>
                   <input className={input} value={s.label} onChange={(e) => set({ categories: upd(D.categories, ci, { specs: upd(cat.specs, i, { label: e.target.value }) }) })} />
+                  <label className="flex items-center gap-1.5 text-xs text-gray-300 whitespace-nowrap cursor-pointer" title="Bắt buộc khi nhập kho">
+                    <input type="checkbox" className="accent-blue-500" checked={!!s.required}
+                      onChange={(e) => set({ categories: upd(D.categories, ci, { specs: upd(cat.specs, i, { required: e.target.checked }) }) })} /> Bắt buộc
+                  </label>
                   <RowBtns i={i} n={cat.specs.length} onMove={(d) => set({ categories: upd(D.categories, ci, { specs: move(cat.specs, i, d) }) })}
                     onDel={() => set({ categories: upd(D.categories, ci, { specs: del(cat.specs, i) }) })} />
                 </div>
               ))}
               {!cat.specs.length && <p className="text-sm text-gray-500">Chưa có trường nào.</p>}
             </div>
-            <button type="button" onClick={() => set({ categories: upd(D.categories, ci, { specs: [...cat.specs, { key: newKey('s_'), label: 'Trường mới' }] }) })}
+            <button type="button" onClick={() => set({ categories: upd(D.categories, ci, { specs: [...cat.specs, { key: newKey('s_'), label: 'Trường mới', required: false }] }) })}
               className="mt-3 flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300"><Plus size={14} /> Thêm trường thông số</button>
           </section>
         </div>

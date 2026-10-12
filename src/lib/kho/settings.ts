@@ -2,11 +2,13 @@
 // Firestore `settings/kho_it`; thiếu mục nào thì lấy MẶC ĐỊNH (= thiết kế Sếp chốt ở Đợt 1).
 // Dùng chung client + server. Phần tính tồn kho / lịch sử phiếu KHÔNG cấu hình được (giữ cố định
 // cho số liệu luôn đúng).
-import { CATEGORY_LABEL, CATEGORY_ORDER, MOVE_DEFS, MOVE_ORDER, PRINT_DEFAULTS, SPEC_FIELDS, TINH_TRANG, type MoveType } from '@/lib/kho/config'
+import { CATEGORY_LABEL, CATEGORY_ORDER, MOVE_DEFS, MOVE_ORDER, PRINT_DEFAULTS, SPEC_FIELDS, SPEC_REQUIRED, TINH_TRANG, type MoveType } from '@/lib/kho/config'
 
 // Trường thông số: `key` cố định (là chỗ lưu giá trị trong device.specs), `label` đổi tên tự do —
 // đổi tên không làm mất giá trị đã nhập. Trường mặc định có key = tên ban đầu.
-export interface SpecField { key: string; label: string }
+// `required` (10/10/2026): bắt buộc khi Nhập kho — thiết bị thiếu ô này bị gắn nhãn "Thiếu thông số".
+export interface SpecField { key: string; label: string; required: boolean }
+const defaultRequired = (cat: string, key: string) => !!SPEC_REQUIRED[cat as keyof typeof SPEC_REQUIRED]?.includes(key)
 export interface CategoryDef { key: string; label: string; specs: SpecField[] }
 
 // Trường bổ sung ở Thông tin chung — giá trị lưu ở device.extra[key]
@@ -29,10 +31,11 @@ export const LIST_COL_LABEL: Record<ListCol, string> = {
 const LIST_DEFAULT: Record<ListCol, boolean> = { brand: true, model: true, serial_number: true, in: true, out: true, back: false, move: false, left: true, status: true, warranty: true }
 
 // Ô Tổng quan
-export type TileKind = 'total' | 'in_use' | 'in_stock' | 'broken' | 'liquidated' | 'units_left' | 'employees' | 'tasks' | 'category'
+export type TileKind = 'total' | 'in_use' | 'in_stock' | 'broken' | 'liquidated' | 'units_left' | 'employees' | 'tasks' | 'category' | 'missing_specs'
 export const TILE_KIND_LABEL: Record<TileKind, string> = {
   total: 'Tổng thiết bị', in_use: 'Đang sử dụng', in_stock: 'Trong kho', broken: 'Hỏng', liquidated: 'Thanh lý',
   units_left: 'Số cái còn trong kho', employees: 'Nhân viên', tasks: 'Công việc chưa xong', category: 'Đếm theo 1 Loại',
+  missing_specs: 'Thiếu thông số',
 }
 export interface TileDef { id: string; kind: TileKind; label: string; arg?: string }
 
@@ -60,7 +63,7 @@ export interface KhoSettings {
 
 export function defaultSettings(): KhoSettings {
   return {
-    categories: CATEGORY_ORDER.map((k) => ({ key: k, label: CATEGORY_LABEL[k], specs: (SPEC_FIELDS[k] || []).map((s) => ({ key: s, label: s })) })),
+    categories: CATEGORY_ORDER.map((k) => ({ key: k, label: CATEGORY_LABEL[k], specs: (SPEC_FIELDS[k] || []).map((s) => ({ key: s, label: s, required: defaultRequired(k, s) })) })),
     conditions: [...TINH_TRANG],
     fieldLabels: { ...BASE_FIELD_DEFAULT },
     extraFields: [],
@@ -72,6 +75,7 @@ export function defaultSettings(): KhoSettings {
       { id: 't4', kind: 'broken', label: 'Hỏng' },
       { id: 't5', kind: 'employees', label: 'Nhân viên' },
       { id: 't6', kind: 'tasks', label: 'Công việc' },
+      { id: 't7', kind: 'missing_specs', label: 'Thiếu thông số' },
     ],
     print: {
       coName: PRINT_DEFAULTS.coName, coAddr: PRINT_DEFAULTS.coAddr, coTax: PRINT_DEFAULTS.coTax, khoName: PRINT_DEFAULTS.khoName,
@@ -105,7 +109,7 @@ export function normalizeSettings(raw: unknown): KhoSettings {
         const specs = (Array.isArray(c.specs) ? c.specs : []).flatMap((s) => {
           if (!s || !keyOk(s.key) || seenSpec.has(s.key)) return []
           seenSpec.add(s.key)
-          return [{ key: s.key, label: str(s.label, 80) || s.key }]
+          return [{ key: s.key, label: str(s.label, 80) || s.key, required: typeof s.required === 'boolean' ? s.required : defaultRequired(c.key, s.key) }]
         })
         return [{ key: c.key, label: str(c.label, 60) || c.key, specs }]
       })
@@ -179,6 +183,10 @@ export function catLabel(s: KhoSettings, key: string): string {
 }
 export function specFieldsOf(s: KhoSettings, key: string): SpecField[] {
   return s.categories.find((c) => c.key === key)?.specs || []
+}
+/** Ô thông số bắt buộc còn trống của 1 thiết bị (theo Loại) — rỗng = đủ */
+export function missingSpecs(s: KhoSettings, category: string, specs: Record<string, string> | null | undefined): SpecField[] {
+  return specFieldsOf(s, category).filter((f) => f.required && !String(specs?.[f.key] ?? '').trim())
 }
 export function deviceNameS(s: KhoSettings, d: { category: string; brand?: string | null; model?: string | null }): string {
   return [catLabel(s, d.category), d.brand, d.model].filter(Boolean).join(' · ')

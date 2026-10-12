@@ -4,13 +4,13 @@
 // 4 nút lập phiếu ở đầu trang (1 phiếu nhiều thiết bị) + "Thêm thiết bị" (thêm mã vào danh mục).
 // Đợt 2: tên Loại / tên cột / bật-tắt cột / trường bổ sung theo "Sửa giao diện".
 import { useState, useEffect, useMemo } from 'react'
-import { Search, Plus, QrCode, FileSpreadsheet, Package, X, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, Columns3, ChevronDown } from 'lucide-react'
+import { Search, Plus, QrCode, FileSpreadsheet, Package, X, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, Columns3, ChevronDown, TriangleAlert, Lock } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { DeviceStatus, DeviceCategory } from '@/lib/types'
 import { useRole } from '@/lib/hooks/useRole'
 import { STATUS_COLOR, STATUS_LABEL, STATUS_ORDER, fmtDate, normalizeVi, type MoveType } from '@/lib/kho/config'
-import { catLabel, type KhoSettings, type ListCol } from '@/lib/kho/settings'
+import { catLabel, missingSpecs, specFieldsOf, type KhoSettings, type ListCol } from '@/lib/kho/settings'
 import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 import PhieuModal from '@/components/kho/PhieuModal'
 
@@ -19,6 +19,7 @@ interface Device {
   serial_number?: string | null; status: DeviceStatus; warranty_from?: string | null; warranty_expiry?: string | null
   stock: { in: number; out: number; back: number; move: number; left: number; held: number }
   extra?: Record<string, string>
+  specs?: Record<string, string>
 }
 
 // Cột bật/tắt được — [khoá, tiêu đề, căn phải?, ô]
@@ -92,6 +93,7 @@ export default function DevicesPage() {
   const [search, setSearch] = useState('')
   const [filterCategory, setFilterCategory] = useState<DeviceCategory | ''>('')
   const [filterStatus, setFilterStatus] = useState<DeviceStatus | ''>('')
+  const [onlyMissing, setOnlyMissing] = useState(false) // thiết bị thiếu thông số bắt buộc (10/10/2026)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [exporting, setExporting] = useState(false)
   const [modal, setModal] = useState<MoveType | null>(null)
@@ -113,19 +115,23 @@ export default function DevicesPage() {
         const cat = p.get('category') as DeviceCategory | null
         if (st && STATUS_ORDER.includes(st)) setFilterStatus(st)
         if (cat) setFilterCategory(cat)
+        if (p.get('missing') === '1') setOnlyMissing(true)
         try { const raw = localStorage.getItem(HIDDEN_KEY); if (raw) setHidden(new Set(JSON.parse(raw) as string[])) } catch { /* bỏ qua */ }
       }
     })
     return () => { alive = false }
   }, [reload])
 
+  const isMissing = (d: Device) => d.status !== 'liquidated' && missingSpecs(S, d.category, d.specs).length > 0
+  const missingCount = allDevices.filter(isMissing).length
   const devices = useMemo(() => {
     const q = normalizeVi(search)
     return allDevices.filter((d) =>
       (!filterCategory || d.category === filterCategory) &&
       (!filterStatus || d.status === filterStatus) &&
+      (!onlyMissing || (d.status !== 'liquidated' && missingSpecs(S, d.category, d.specs).length > 0)) &&
       (!q || [d.asset_code, d.brand, d.model, d.serial_number || ''].some((x) => normalizeVi(x).includes(q))))
-  }, [allDevices, search, filterCategory, filterStatus])
+  }, [allDevices, search, filterCategory, filterStatus, onlyMissing, S])
 
   function flash(t: string) { setToast(t); setTimeout(() => setToast(''), 2600) }
   function toggleSelect(id: string) { setSelected((prev) => { const s = new Set(prev); if (s.has(id)) s.delete(id); else s.add(id); return s }) }
@@ -187,6 +193,12 @@ export default function DevicesPage() {
           <option value="">{S.fieldLabels.status}: Tất cả</option>
           {STATUS_ORDER.map((k) => <option key={k} value={k}>{STATUS_LABEL[k]}</option>)}
         </select>
+        {(missingCount > 0 || onlyMissing) && (
+          <button type="button" onClick={() => setOnlyMissing(!onlyMissing)} title="Thiết bị còn thiếu thông số bắt buộc — bổ sung ở trang chi tiết hoặc khi nhập kho"
+            className={`flex items-center gap-2 border rounded-lg px-3 py-2.5 text-sm ${onlyMissing ? 'bg-amber-500/15 border-amber-500 text-amber-300' : 'bg-gray-900 border-gray-700 text-amber-300 hover:border-amber-500/60'}`}>
+            <TriangleAlert size={15} /> Thiếu thông số · {missingCount}
+          </button>
+        )}
         <div className="relative" data-col-menu>
           <button type="button" onClick={() => setColMenu(!colMenu)}
             className={`flex items-center gap-2 bg-gray-900 border rounded-lg px-3 py-2.5 text-sm ${hidden.size ? 'border-blue-500 text-blue-300' : 'border-gray-700 text-white'}`}>
@@ -243,7 +255,8 @@ export default function DevicesPage() {
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSelect(d.id)} className="accent-blue-500 cursor-pointer" />
                   </td>
-                  <td className="px-4 py-3 font-mono text-blue-400"><Link href={`/dashboard/devices/${d.id}`}>{d.asset_code}</Link></td>
+                  <td className="px-4 py-3 font-mono text-blue-400 whitespace-nowrap"><Link href={`/dashboard/devices/${d.id}`}>{d.asset_code}</Link>
+                    {isMissing(d) && <span title="Thiếu thông số bắt buộc" className="inline-block align-middle ml-1.5 text-amber-400"><TriangleAlert size={13} /></span>}</td>
                   {showCat && <td className="px-4 py-3 text-gray-300">{catLabel(S, d.category)}</td>}
                   {cols.map((c) => <td key={c.key} className={`px-4 py-3 ${c.right ? 'text-right' : ''}`}>{c.cell(d)}</td>)}
                 </tr>
@@ -253,7 +266,7 @@ export default function DevicesPage() {
         </table>
       </div>
 
-      {modal && <PhieuModal type={modal} onClose={() => setModal(null)} onSaved={(m) => { setModal(null); flash(`Đã lưu phiếu ${m.so}`); fetchDevices() }} />}
+      {modal && <PhieuModal type={modal} onClose={() => setModal(null)} onSaved={(m, x) => { setModal(null); flash(`Đã lưu phiếu ${m.so}${x?.repairCreated ? ` · đã tạo ${x.repairCreated} Công việc Sửa chữa` : ''}`); fetchDevices() }} />}
       {adding && <AddDeviceModal S={S} onClose={() => setAdding(false)} onSaved={(id) => { setAdding(false); router.push(`/dashboard/devices/${id}`) }} />}
       {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-800 border border-gray-600 px-4 py-2.5 rounded-xl text-sm shadow-xl">{toast}</div>}
     </div>
@@ -261,32 +274,39 @@ export default function DevicesPage() {
 }
 
 // Thêm mã vào Danh mục — đúng 5 cột Sếp chốt: Mã tài sản · Loại · Hãng · Model · Số Seri
+// Giữ nút này để Sếp tự chuyển dữ liệu cũ (chốt 10/10/2026) — có thêm ô thông số theo Loại. Thiếu ô
+// bắt buộc thì hỏi lại 1 lần, vẫn cho lưu (gắn nhãn "Thiếu thông số", lần Nhập kho sau bắt điền nốt).
 function AddDeviceModal({ S, onClose, onSaved }: { S: KhoSettings; onClose: () => void; onSaved: (id: string) => void }) {
   const L = S.fieldLabels
   const [f, setF] = useState({ asset_code: '', category: '' as DeviceCategory | '', brand: '', model: '', serial_number: '' })
+  const [specs, setSpecs] = useState<Record<string, string>>({})
+  const [ask, setAsk] = useState<string[] | null>(null)
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
   const input = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500'
-  async function save() {
+  const fields = f.category ? specFieldsOf(S, f.category) : []
+  async function save(force: boolean) {
     if (!f.asset_code.trim() || !f.category) { setErr(`Cần nhập ${L.asset_code} và chọn ${L.category}`); return }
-    setSaving(true); setErr('')
-    const res = await fetch('/api/devices/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f) })
+    const miss = missingSpecs(S, f.category, specs)
+    if (miss.length && !force) { setAsk(miss.map((x) => x.label)); return }
+    setSaving(true); setErr(''); setAsk(null)
+    const res = await fetch('/api/devices/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...f, specs }) })
     const json = await res.json()
     setSaving(false)
     if (!res.ok) { setErr(json.error || 'Chưa lưu được'); return }
     onSaved(json.data.id)
   }
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-lg">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start sm:items-center justify-center overflow-y-auto p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-3xl">
         <div className="flex items-center px-5 py-4 border-b border-gray-800">
           <h2 className="font-semibold text-lg flex-1">Thêm thiết bị vào danh mục</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={18} /></button>
         </div>
         <div className="p-5 grid grid-cols-2 gap-4">
-          <div className="col-span-2"><label className="block text-xs text-gray-400 mb-1">{L.asset_code} <b className="text-red-400">*</b></label><input className={input + ' font-mono'} value={f.asset_code} onChange={(e) => setF({ ...f, asset_code: e.target.value })} placeholder="VD LT-007" autoFocus /></div>
+          <div className="col-span-2"><label className="block text-xs text-gray-400 mb-1">{L.asset_code} <b className="text-red-400">*</b></label><input className={input + ' font-mono'} value={f.asset_code} onChange={(e) => setF({ ...f, asset_code: e.target.value })} placeholder="VD LT-007" maxLength={60} autoFocus /></div>
           <div><label className="block text-xs text-gray-400 mb-1">{L.category} <b className="text-red-400">*</b></label>
-            <select className={input} value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as DeviceCategory })}>
+            <select className={input} value={f.category} onChange={(e) => { setF({ ...f, category: e.target.value as DeviceCategory }); setSpecs({}); setAsk(null) }}>
               <option value="">— chọn —</option>
               {S.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
@@ -294,12 +314,42 @@ function AddDeviceModal({ S, onClose, onSaved }: { S: KhoSettings; onClose: () =
           <div><label className="block text-xs text-gray-400 mb-1">{L.brand}</label><input className={input} value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })} /></div>
           <div><label className="block text-xs text-gray-400 mb-1">{L.model}</label><input className={input} value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })} /></div>
           <div><label className="block text-xs text-gray-400 mb-1">{L.serial_number}</label><input className={input} value={f.serial_number} onChange={(e) => setF({ ...f, serial_number: e.target.value })} /></div>
-          <p className="col-span-2 text-xs text-gray-500">Thiết bị mới có tồn 0 — sau khi thêm, bấm <b>+ Nhập kho</b> để ghi số lượng. Thông số kĩ thuật, bảo hành nhập ở trang chi tiết.</p>
+          <div className="col-span-2 rounded-xl border border-gray-800 p-4">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <b className="text-sm">Thông số kĩ thuật</b>
+              {f.category && <span className="text-xs px-2 py-0.5 rounded border border-amber-500/40 text-amber-400">riêng theo {L.category}: {catLabel(S, f.category)}</span>}
+              <span className="text-xs text-gray-500 flex items-center gap-1">nhập 1 lần, lưu xong là khoá <Lock size={11} /></span>
+            </div>
+            {!f.category ? <p className="text-sm text-gray-500">Chọn {L.category} để hiện các ô thông số.</p>
+              : !fields.length ? <p className="text-sm text-gray-500">{L.category} &quot;{catLabel(S, f.category)}&quot; chưa có trường thông số.</p>
+              : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-2">
+                  {fields.map((x) => (
+                    <div key={x.key}>
+                      <label className="block text-[11px] text-gray-400 mb-0.5">{x.label}{x.required && <b className="text-red-400"> *</b>}</label>
+                      <input className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                        value={specs[x.key] || ''} onChange={(e) => { setSpecs({ ...specs, [x.key]: e.target.value }); setAsk(null) }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+          </div>
+          <p className="col-span-2 text-xs text-gray-500">Thiết bị mới có tồn 0 — sau khi thêm, bấm <b>+ Nhập kho</b> để ghi số lượng. Bảo hành nhập ở trang chi tiết.
+            <span className="text-gray-400"> Chuyển dữ liệu cũ: thiếu ô * vẫn lưu được, thiết bị gắn nhãn <span className="text-amber-400">⚠ Thiếu thông số</span>, lần Nhập kho sau app bắt điền nốt.</span></p>
           {err && <p className="col-span-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{err}</p>}
+          {ask && (
+            <div className="col-span-2 text-sm bg-amber-500/10 border border-amber-500/40 text-amber-200 rounded-lg px-4 py-3">
+              <b>Còn thiếu thông số bắt buộc:</b> {ask.join(', ')}.<br />Vẫn lưu thì thiết bị gắn nhãn <b>⚠ Thiếu thông số</b> và phải điền nốt khi Nhập kho.
+              <div className="flex gap-2 mt-3">
+                <button type="button" onClick={() => setAsk(null)} className="border border-gray-600 hover:border-gray-400 px-3 py-1.5 rounded-lg text-sm text-gray-200">Quay lại điền</button>
+                <button type="button" onClick={() => save(true)} disabled={saving} className="bg-amber-500 hover:bg-amber-400 text-gray-900 font-semibold px-3 py-1.5 rounded-lg text-sm disabled:opacity-50">Vẫn lưu</button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-800">
           <button onClick={onClose} className="border border-gray-700 px-4 py-2 rounded-lg text-sm text-gray-300">Huỷ</button>
-          <button onClick={save} disabled={saving} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-4 py-2 rounded-lg text-sm font-medium">{saving ? 'Đang lưu…' : 'Lưu'}</button>
+          <button onClick={() => save(false)} disabled={saving} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-4 py-2 rounded-lg text-sm font-medium">{saving ? 'Đang lưu…' : 'Lưu'}</button>
         </div>
       </div>
     </div>

@@ -1,11 +1,12 @@
 import "server-only";
 import { revalidateTag } from "next/cache";
+import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
-import { TAG_DEVICES } from "@/lib/firestore/devices";
+import { TAG_DEVICES, buildDeviceDoc, listAllDevices, specsOf } from "@/lib/firestore/devices";
 import { computeHolders } from "@/lib/kho/holders";
 import { getKhoSettings } from "@/lib/firestore/settings";
-import { deviceNameS } from "@/lib/kho/settings";
-import { MOVE_DEFS, TAX_CODE_RE, normalizeVi, stockHeld, stockLeft, type StockNumbers } from "@/lib/kho/config";
+import { deviceNameS, missingSpecs, specFieldsOf, type KhoSettings } from "@/lib/kho/settings";
+import { MOVE_DEFS, TAX_CODE_RE, assetCodeError, normalizeVi, stockHeld, stockLeft, type StockNumbers } from "@/lib/kho/config";
 import type { DeviceStatus, FirestoreDevice, FirestoreMove, MoveLine, MoveType } from "@/lib/firestore/types";
 
 // Phiếu Nhập kho / Cấp phát / Thu hồi / Luân chuyển (Kho Tổng, 30/09/2026).
@@ -55,13 +56,54 @@ function applyDelta(s: StockNumbers, type: MoveType, qty: number): StockNumbers 
   return n;
 }
 
+// Thiết bị khai báo mới ngay trong phiếu Nhập kho (Sếp duyệt demo 10/10/2026: "Nhập kho là cửa vào")
+export interface NewDeviceInput {
+  assetCode: string;
+  category: string;
+  brand: string;
+  model: string;
+  serialNumber?: string | null;
+  warrantyFrom?: string | null;
+  warrantyExpiry?: string | null;
+  specs?: Record<string, string>;
+}
+
 export interface CreateMoveInput {
   type: MoveType;
   date: string;
   info: Record<string, string | undefined>;
   dnSo?: string | null;
   dnDate?: string | null;
-  lines: { deviceId: string; qty: number; condition: string; note?: string | null }[];
+  // deviceId = thiết bị có sẵn · newDevice = khai báo mới (chỉ Nhập kho) · fillSpecs = điền nốt ô
+  // thông số còn trống của thiết bị có sẵn (Nhập kho bắt buộc đủ ô bắt buộc mới lưu được)
+  lines: { deviceId?: string; newDevice?: NewDeviceInput | null; fillSpecs?: Record<string, string> | null; qty: number; condition: string; note?: string | null }[];
+}
+
+const cut = (v: unknown, max = 120) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+
+// Làm sạch + kiểm tra 1 thiết bị khai báo mới. Chỉ nhận ô thông số đúng của Loại đó.
+function cleanNewDevice(raw: unknown, settings: KhoSettings, n: number): NewDeviceInput {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const assetCode = typeof r.assetCode === "string" ? r.assetCode.trim() : "";
+  const codeErr = assetCodeError(assetCode);
+  if (codeErr) throw new MoveError(`Dòng ${n}: ${codeErr}`);
+  const category = cut(r.category, 80);
+  if (!settings.categories.some((c) => c.key === category)) throw new MoveError(`Dòng ${n}: chưa chọn Loại cho thiết bị mới ${assetCode}`);
+  const brand = cut(r.brand), model = cut(r.model);
+  if (!brand) throw new MoveError(`Dòng ${n}: chưa nhập Hãng cho thiết bị mới ${assetCode}`);
+  if (!model) throw new MoveError(`Dòng ${n}: chưa nhập Model cho thiết bị mới ${assetCode}`);
+  const rawSpecs = (r.specs && typeof r.specs === "object" ? r.specs : {}) as Record<string, unknown>;
+  const specs: Record<string, string> = {};
+  for (const f of specFieldsOf(settings, category)) { const v = cut(rawSpecs[f.key], 300); if (v) specs[f.key] = v; }
+  const miss = missingSpecs(settings, category, specs);
+  if (miss.length) throw new MoveError(`Dòng ${n}: thiết bị mới ${assetCode} còn thiếu thông số ${miss.map((f) => f.label).join(", ")}`);
+  return {
+    assetCode, category, brand, model,
+    serialNumber: cut(r.serialNumber) || null,
+    warrantyFrom: isIsoDate(r.warrantyFrom) ? r.warrantyFrom : null,
+    warrantyExpiry: isIsoDate(r.warrantyExpiry) ? r.warrantyExpiry : null,
+    specs,
+  };
 }
 
 export async function createMove(input: CreateMoveInput, createdBy: string | null): Promise<FirestoreMove> {
@@ -85,22 +127,53 @@ export async function createMove(input: CreateMoveInput, createdBy: string | nul
   const settings = await getKhoSettings();
   // Gộp số lượng theo thiết bị để kiểm tra tồn đúng khi 1 thiết bị nằm ở nhiều dòng
   const qtyByDevice = new Map<string, number>();
+  const newDevices = new Map<string, NewDeviceInput>(); // id cấp sẵn → thiết bị khai báo mới
+  const newCodes = new Map<string, number>();            // mã (bỏ dấu, thường) → dòng, chống trùng trong phiếu
+  const fills = new Map<string, Record<string, unknown>>();
+  const lineIds: string[] = [];
   input.lines.forEach((l, i) => {
     if (!l || typeof l !== "object") throw new MoveError(`Dòng ${i + 1}: dữ liệu không hợp lệ`);
-    if (!l.deviceId || typeof l.deviceId !== "string") throw new MoveError(`Dòng ${i + 1}: chưa chọn mã tài sản`);
-    // id Firestore không được chứa "/", không được là "." / ".." hay dạng __x__ (dành riêng)
-    if (l.deviceId.includes("/") || l.deviceId.length > 200 || /^\.\.?$/.test(l.deviceId) || /^__.*__$/.test(l.deviceId)) throw new MoveError(`Dòng ${i + 1}: mã tài sản không có trong danh mục — vui lòng kiểm tra lại`);
+    let id: string;
+    if (l.newDevice) {
+      if (input.type !== "NK") throw new MoveError(`Dòng ${i + 1}: mã tài sản không có trong danh mục — thiết bị mới chỉ khai báo ở phiếu Nhập kho`);
+      const nd = cleanNewDevice(l.newDevice, settings, i + 1);
+      const k = normalizeVi(nd.assetCode);
+      if (newCodes.has(k)) throw new MoveError(`Dòng ${i + 1}: mã ${nd.assetCode} trùng với dòng ${newCodes.get(k)}`);
+      newCodes.set(k, i + 1);
+      id = adminDb.collection("devices").doc().id;
+      newDevices.set(id, nd);
+    } else {
+      if (!l.deviceId || typeof l.deviceId !== "string") throw new MoveError(`Dòng ${i + 1}: chưa chọn mã tài sản`);
+      // id Firestore không được chứa "/", không được là "." / ".." hay dạng __x__ (dành riêng)
+      if (l.deviceId.includes("/") || l.deviceId.length > 200 || /^\.\.?$/.test(l.deviceId) || /^__.*__$/.test(l.deviceId)) throw new MoveError(`Dòng ${i + 1}: mã tài sản không có trong danh mục — vui lòng kiểm tra lại`);
+      id = l.deviceId;
+      if (input.type === "NK" && l.fillSpecs && typeof l.fillSpecs === "object") fills.set(id, { ...(fills.get(id) || {}), ...l.fillSpecs });
+    }
     if (!Number.isInteger(l.qty) || l.qty < 1) throw new MoveError(`Dòng ${i + 1}: số lượng phải là số nguyên từ 1 trở lên`);
     if (!l.condition) throw new MoveError(`Dòng ${i + 1}: chưa chọn tình trạng`);
     if (!settings.conditions.includes(l.condition)) throw new MoveError(`Dòng ${i + 1}: tình trạng "${String(l.condition).slice(0, 40)}" không còn trong danh sách — tải lại trang rồi chọn lại`);
-    qtyByDevice.set(l.deviceId, (qtyByDevice.get(l.deviceId) || 0) + l.qty);
+    qtyByDevice.set(id, (qtyByDevice.get(id) || 0) + l.qty);
+    lineIds.push(id);
   });
+
+  // Mã khai báo mới không được trùng danh mục theo kiểu bỏ dấu / không phân biệt hoa thường (QA
+  // 12/10: "lt-001" lọt qua khi đã có "LT-001" → popup gộp 2 máy làm 1, phiếu sau ghi nhầm máy).
+  // Danh mục có cache nhưng tự làm mới mỗi lần ghi; trong transaction vẫn kiểm khớp chính xác để
+  // chống 2 người lưu cùng lúc.
+  if (newDevices.size) {
+    const taken = new Map((await listAllDevices()).map((d) => [normalizeVi(d.assetCode), d.assetCode]));
+    for (const nd of newDevices.values()) {
+      const hit = taken.get(normalizeVi(nd.assetCode));
+      if (hit) throw new MoveError(`Mã ${nd.assetCode} trùng mã đã có trong danh mục (${hit}) — chọn mã đó trong gợi ý thay vì khai báo mới`);
+    }
+  }
 
   const yy = input.date.slice(2, 4);
   const cRef = counterRef(`moves-${input.type}${yy}`);
   const moveRef = collection().doc();
   const deviceIds = [...qtyByDevice.keys()];
-  const devRefs = deviceIds.map((id) => adminDb.collection("devices").doc(id));
+  const existingIds = deviceIds.filter((id) => !newDevices.has(id));
+  const devRefs = existingIds.map((id) => adminDb.collection("devices").doc(id));
 
   // Thu hồi / luân chuyển: người giao (TH) / người chuyển (LC) phải ĐANG GIỮ đủ số đó — tên gõ tay
   // nên so khớp theo tên bỏ dấu; gõ lệch tên sẽ bị chặn kèm danh sách người đang giữ để sửa lại.
@@ -112,14 +185,40 @@ export async function createMove(input: CreateMoveInput, createdBy: string | nul
     const oldMoves = checkPerson
       ? (await Promise.all(deviceIds.map((id) => tx.get(collection().where("deviceIds", "array-contains", id))))).flatMap((s) => s.docs.map(fromDoc))
       : [];
+    // Mã khai báo mới không được trùng mã đã có trong danh mục (kiểm trong transaction → 2 người lưu
+    // cùng lúc cũng không tạo trùng)
+    const dupSnaps = await Promise.all([...newDevices.values()].map((nd) => tx.get(adminDb.collection("devices").where("assetCode", "==", nd.assetCode).limit(1))));
+    dupSnaps.forEach((s, i) => {
+      if (!s.empty) throw new MoveError(`Mã ${[...newDevices.values()][i].assetCode} đã có trong danh mục — chọn mã đó trong gợi ý thay vì khai báo mới`);
+    });
     const devices = new Map<string, FirestoreDevice>();
     devSnaps.forEach((s, i) => {
-      if (!s.exists) throw new MoveError(`Mã tài sản không có trong danh mục (id ${deviceIds[i]}) — vui lòng kiểm tra lại`);
+      if (!s.exists) throw new MoveError(`Mã tài sản không có trong danh mục (id ${existingIds[i]}) — vui lòng kiểm tra lại`);
       devices.set(s.id, { id: s.id, ...s.data() } as FirestoreDevice);
     });
 
-    // Kiểm tra số lượng theo từng loại phiếu
+    // Nhập kho thiết bị có sẵn: phải đủ thông số bắt buộc (điền nốt ô trống — ô đã có giữ nguyên)
+    const now = new Date().toISOString();
+    const specPatch = new Map<string, { specs: Record<string, string>; filled: { field: string; from: string; to: string }[] }>();
+    if (input.type === "NK") {
+      for (const [id, d] of devices) {
+        const cur = specsOf(d);
+        const fill = fills.get(id) || {};
+        const merged = { ...cur };
+        const filled: { field: string; from: string; to: string }[] = [];
+        for (const f of specFieldsOf(settings, d.category)) {
+          const v = cut(fill[f.key], 300);
+          if (v && !String(cur[f.key] ?? "").trim()) { merged[f.key] = v; filled.push({ field: f.label, from: "", to: v }); }
+        }
+        const miss = missingSpecs(settings, d.category, merged);
+        if (miss.length) throw new MoveError(`${d.assetCode}: còn thiếu thông số ${miss.map((f) => f.label).join(", ")} — điền nốt ở dòng thiết bị này rồi lưu`);
+        specPatch.set(id, { specs: merged, filled });
+      }
+    }
+
+    // Kiểm tra số lượng theo từng loại phiếu (thiết bị mới khai báo chỉ có ở Nhập kho → không cần)
     for (const [id, qty] of qtyByDevice) {
+      if (newDevices.has(id)) continue;
       const d = devices.get(id)!;
       const s = deviceStock(d);
       if (input.type === "XK" && qty > stockLeft(s)) throw new MoveError(`${d.assetCode}: chỉ còn ${stockLeft(s)} trong kho, không cấp ${qty} được`);
@@ -136,16 +235,20 @@ export async function createMove(input: CreateMoveInput, createdBy: string | nul
       }
     }
 
-    const lines: MoveLine[] = input.lines.map((l) => {
-      const d = devices.get(l.deviceId)!;
-      return { deviceId: d.id, assetCode: d.assetCode, name: deviceNameS(settings, d), serial: d.serialNumber ?? null, qty: l.qty, condition: l.condition, note: l.note ? String(l.note).slice(0, 300) : null };
+    const lines: MoveLine[] = input.lines.map((l, i) => {
+      const id = lineIds[i];
+      const nd = newDevices.get(id);
+      const note = l.note ? String(l.note).slice(0, 300) : null;
+      if (nd) return { deviceId: id, assetCode: nd.assetCode, name: deviceNameS(settings, nd), serial: nd.serialNumber ?? null, qty: l.qty, condition: l.condition, note };
+      const d = devices.get(id)!;
+      return { deviceId: d.id, assetCode: d.assetCode, name: deviceNameS(settings, d), serial: d.serialNumber ?? null, qty: l.qty, condition: l.condition, note };
     });
 
     const n = ((cSnap.exists ? cSnap.data()?.n : 0) || 0) + 1;
-    const now = new Date().toISOString();
+    const so = `${input.type}${yy}${String(n).padStart(4, "0")}`;
     const move: Omit<FirestoreMove, "id"> = {
       type: input.type,
-      so: `${input.type}${yy}${String(n).padStart(4, "0")}`,
+      so,
       date: input.date,
       info,
       dnSo: input.dnSo ? String(input.dnSo).trim().slice(0, 60) || null : null,
@@ -158,10 +261,27 @@ export async function createMove(input: CreateMoveInput, createdBy: string | nul
     };
 
     for (const [id, qty] of qtyByDevice) {
+      const nd = newDevices.get(id);
+      if (nd) {
+        // Thiết bị khai báo mới: tạo hồ sơ + nhập luôn số lượng, thông số khoá theo phiếu này
+        const doc = buildDeviceDoc({ ...nd, quantity: 0, specsLock: { at: now, by: createdBy, so, via: "NK" } }, now);
+        tx.create(adminDb.collection("devices").doc(id), { ...doc, stock: applyDelta(doc.stock!, "NK", qty) });
+        continue;
+      }
       const d = devices.get(id)!;
       const s = applyDelta(deviceStock(d), input.type, qty);
       const broken = lines.some((l) => l.deviceId === id && l.condition === "Hư");
-      tx.set(devRefs[deviceIds.indexOf(id)], { stock: s, status: nextStatus(d.status, stockHeld(s), input.type, broken), updatedAt: now }, { merge: true });
+      const patch: Record<string, unknown> = { stock: s, status: nextStatus(d.status, stockHeld(s), input.type, broken), updatedAt: now };
+      const sp = specPatch.get(id);
+      if (sp) {
+        if (sp.filled.length) {
+          patch.specs = sp.specs;
+          patch.specsLog = FieldValue.arrayUnion({ at: now, by: createdBy, kind: "fill", reason: `Bổ sung khi nhập kho ${so}`, changes: sp.filled });
+        }
+        // Đủ thông số mà chưa từng khoá (thiết bị cũ) → khoá theo phiếu nhập này
+        if (!d.specsLock) patch.specsLock = { at: now, by: createdBy, so, via: sp.filled.length ? "fill" : "NK" };
+      }
+      tx.set(devRefs[existingIds.indexOf(id)], patch, { merge: true });
     }
     tx.set(cRef, { n }, { merge: true });
     tx.set(moveRef, move);
@@ -198,9 +318,20 @@ export async function deleteMove(id: string): Promise<void> {
         }
       }
     }
+    // Phiếu Nhập kho đã KHAI BÁO MỚI thiết bị (thiết bị do chính phiếu này tạo) mà thiết bị chưa có
+    // phiếu nào khác → xoá luôn thiết bị, để lập lại phiếu / khai báo lại đúng mã đó được (QA 12/10)
+    const madeHere = move.type === "NK" && move.so
+      ? snaps.filter((s) => { const l = s.exists ? (s.data() as FirestoreDevice).specsLock : null; return !!l && l.via === "NK" && l.so === move.so; })
+      : [];
+    const orphan = new Set<string>();
+    if (madeHere.length) {
+      const qs = await Promise.all(madeHere.map((s) => tx.get(collection().where("deviceIds", "array-contains", s.id))));
+      qs.forEach((q, i) => { if (q.docs.every((m) => m.id === move.id)) orphan.add(madeHere[i].id); });
+    }
     const now = new Date().toISOString();
     snaps.forEach((s, i) => {
       if (!s.exists) return; // thiết bị đã bị xoá — chỉ xoá phiếu
+      if (orphan.has(s.id)) { tx.delete(refs[i]); return; }
       const d = { id: s.id, ...s.data() } as FirestoreDevice;
       const st = applyDelta(deviceStock(d), move.type, -qtyByDevice.get(ids[i])!);
       if (stockLeft(st) < 0) throw new MoveError(`${d.assetCode}: không xoá được — số đã cấp ra sẽ lớn hơn số nhập`);

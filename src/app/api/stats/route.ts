@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { listAllDevices } from '@/lib/firestore/devices'
+import { listAllDevices, specsOf } from '@/lib/firestore/devices'
+import { missingSpecs } from '@/lib/kho/settings'
 import { listActiveEmployees } from '@/lib/firestore/employees'
 import { listAllTasks } from '@/lib/firestore/tasks'
 import { listRecentMoves, deviceStock } from '@/lib/firestore/moves'
@@ -35,6 +36,8 @@ export async function GET() {
       tasks_total: tasks.length,
       units_left: devices.reduce((s, d) => s + Math.max(0, stockLeft(deviceStock(d))), 0),
       by_category: Object.fromEntries(settings.categories.map((c) => [c.key, devices.filter((d) => d.category === c.key).length])),
+      // Thiết bị chưa đủ thông số bắt buộc (dữ liệu cũ) — 10/10/2026
+      missing_specs: devices.filter((d) => d.status !== 'liquidated' && missingSpecs(settings, d.category, specsOf(d)).length).length,
     }
     return NextResponse.json({ stats, recent })
   } catch (err) {

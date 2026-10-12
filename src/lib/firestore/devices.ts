@@ -1,7 +1,8 @@
 import "server-only";
 import { unstable_cache, revalidateTag } from "next/cache";
+import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase/admin";
-import type { FirestoreDevice, LaptopSpecs, MonitorSpecs } from "@/lib/firestore/types";
+import type { FirestoreDevice, LaptopSpecs, MonitorSpecs, SpecLogEntry } from "@/lib/firestore/types";
 import { LEGACY_SPEC_MAP, stockHeld, stockLeft } from "@/lib/kho/config";
 
 // Số tồn (xem FirestoreDevice.stock). Viết lại ở đây thay vì import moves.ts để tránh vòng import.
@@ -52,6 +53,9 @@ export function toDeviceJson(device: FirestoreDevice) {
     extra: device.extra || {},
     stock: { ...stockOf(device), left: stockLeft(stockOf(device)), held: stockHeld(stockOf(device)) },
     stock_migrated: !!device.stock,
+    // Thông số khoá (10/10/2026)
+    spec_lock: device.specsLock ?? null,
+    spec_log: device.specsLog ?? [],
   };
 }
 
@@ -108,12 +112,13 @@ export interface CreateDeviceInput {
   monitorSpecs?: MonitorSpecs | null;
   specs?: Record<string, string> | null;
   warrantyFrom?: string | null;
+  specsLock?: FirestoreDevice["specsLock"];
 }
 
-export async function createDevice(input: CreateDeviceInput): Promise<FirestoreDevice> {
-  const now = new Date().toISOString();
-  const qrCode = `ITASSET-${input.assetCode}-${Date.now()}`;
-  const device: Omit<FirestoreDevice, "id"> = {
+// Dựng document thiết bị mới — dùng chung cho "Thêm thiết bị" và khai báo thiết bị mới ngay trong
+// phiếu Nhập kho (lib/firestore/moves.ts ghi trong cùng transaction với phiếu).
+export function buildDeviceDoc(input: CreateDeviceInput, now: string): Omit<FirestoreDevice, "id"> {
+  return {
     assetCode: input.assetCode,
     category: input.category,
     brand: input.brand,
@@ -125,7 +130,7 @@ export async function createDevice(input: CreateDeviceInput): Promise<FirestoreD
     warrantyExpiry: input.warrantyExpiry ?? null,
     notes: input.notes ?? null,
     imageUrl: null,
-    qrCode,
+    qrCode: `ITASSET-${input.assetCode}-${Date.now()}`,
     quantity: input.quantity ?? 1,
     createdAt: now,
     updatedAt: now,
@@ -133,9 +138,14 @@ export async function createDevice(input: CreateDeviceInput): Promise<FirestoreD
     monitorSpecs: input.monitorSpecs ?? null,
     specs: input.specs ?? null,
     warrantyFrom: input.warrantyFrom ?? null,
-    // Thiết bị mới tạo có tồn 0 — số lượng vào kho qua phiếu Nhập kho (Kho Tổng, 30/09/2026)
     stock: { in: 0, out: 0, back: 0, move: 0 },
+    specsLock: input.specsLock ?? null,
   };
+}
+
+export async function createDevice(input: CreateDeviceInput): Promise<FirestoreDevice> {
+  // Thiết bị mới tạo có tồn 0 — số lượng vào kho qua phiếu Nhập kho (Kho Tổng, 30/09/2026)
+  const device = buildDeviceDoc(input, new Date().toISOString());
   const ref = await collection().add(device);
   revalidateTag(TAG_DEVICES, { expire: 0 });
   return { id: ref.id, ...device };
@@ -159,11 +169,14 @@ export interface UpdateDeviceInput {
   quantity?: number;
   laptopSpecs?: Partial<LaptopSpecs>;
   monitorSpecs?: Partial<MonitorSpecs>;
+  specsLock?: FirestoreDevice["specsLock"];
+  specsLogAdd?: SpecLogEntry[]; // nối thêm vào lịch sử sửa thông số (không ghi đè)
 }
 
 export async function updateDevice(id: string, input: UpdateDeviceInput): Promise<void> {
-  const { laptopSpecs, monitorSpecs, ...rest } = input;
+  const { laptopSpecs, monitorSpecs, specsLogAdd, ...rest } = input;
   const update: Record<string, unknown> = { ...rest, updatedAt: new Date().toISOString() };
+  if (specsLogAdd?.length) update.specsLog = FieldValue.arrayUnion(...specsLogAdd);
 
   if (laptopSpecs || monitorSpecs) {
     const current = await getDeviceById(id);

@@ -4,10 +4,18 @@
 //  Tồn kho tự tính · Thông số kĩ thuật riêng theo Loại · 4 bảng lịch sử · Đang giữ thiết bị · QR.
 //  Thông số + 4 bảng lịch sử mặc định THU GỌN, bấm tiêu đề mới xổ ra; lập phiếu bằng 4 nút ở trang
 //  danh sách Thiết bị (Sếp chốt 30/09 — bỏ nút "Thêm dòng" trong chi tiết cho đỡ trùng).
+// 10/10/2026 (Sếp duyệt demo "liên kết chức năng"): trang này là trung tâm của thiết bị —
+//  • Nút Nhập thêm / Cấp phát / Thu hồi / Luân chuyển mở đúng popup phiếu, điền sẵn mã này
+//  • Mã · Loại · Hãng · Model · Seri + thông số ĐÃ CÓ khoá: chỉ Admin sửa (ghi lý do); ô trống ai có
+//    quyền ghi cũng bổ sung được; mọi lần sửa ghi "Lịch sử sửa thông số"
+//  • Đang giữ: bấm tên mở trang nhân viên, nút Thu hồi / Chuyển ngay tại người đó
+//  • Mục "Công việc của thiết bị" (công việc gắn mã này) + nút Tạo công việc
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ChevronRight, Download, Printer, QrCode, Save, Search, Trash2, Undo2, User, X } from 'lucide-react'
+import { ArrowDownToLine, ArrowLeft, ArrowRightLeft, ArrowUpFromLine, ChevronRight, Download, Lock, Pencil, Printer, QrCode, RotateCcw, Save, Search, Trash2, TriangleAlert, Undo2, User, Wrench, X } from 'lucide-react'
+import PhieuModal from '@/components/kho/PhieuModal'
+import type { Task } from '@/lib/types'
 import DatePicker from '@/components/DatePicker'
 import { useRole } from '@/lib/hooks/useRole'
 import {
@@ -18,15 +26,23 @@ import { computeHolders } from '@/lib/kho/holders'
 import type { DeviceCategory, DeviceStatus } from '@/lib/types'
 import type { FirestoreMove } from '@/lib/firestore/types'
 import { PrintPreview, type PrintableMove } from '@/components/kho/PhieuPrint'
-import { catLabel, deviceNameS, specFieldsOf, type ExtraField } from '@/lib/kho/settings'
+import { catLabel, deviceNameS, missingSpecs, specFieldsOf, type ExtraField } from '@/lib/kho/settings'
 import { useKhoSettings } from '@/lib/kho/useKhoSettings'
+import type { SpecLogEntry } from '@/lib/firestore/types'
+import { computeTaskStatus, TASK_STATUS_COLOR, TASK_STATUS_LABEL } from '@/lib/task-status'
+
+const TASK_TYPE_LABEL: Record<string, string> = { repair: 'Sửa chữa', warranty: 'Bảo hành', install: 'Cài đặt', support: 'Hỗ trợ', other: 'Khác' }
 
 interface DeviceJson {
   id: string; asset_code: string; category: DeviceCategory; brand: string; model: string
   serial_number: string | null; status: DeviceStatus; warranty_from: string | null; warranty_expiry: string | null
   image_url: string | null; specs: Record<string, string>; extra: Record<string, string>; stock_migrated: boolean
   stock: { in: number; out: number; back: number; move: number; left: number; held: number }
+  spec_lock: { at: string; so: string | null; via: string } | null
+  spec_log: SpecLogEntry[]
 }
+// Bộ sửa thông số (Admin sửa / bổ sung ô trống) — tách khỏi form "Thông tin chung" + thanh Lưu
+type SpecEd = { asset_code: string; category: DeviceCategory; brand: string; model: string; serial_number: string; specs: Record<string, string> }
 type Form = {
   asset_code: string; category: DeviceCategory; brand: string; model: string; serial_number: string
   status: DeviceStatus; warranty_from: string; warranty_expiry: string; specs: Record<string, string>; extra: Record<string, string>
@@ -86,6 +102,24 @@ export default function DeviceDetailPage() {
   const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }))
   const [preview, setPreview] = useState<PrintableMove | null>(null)
   const [confirmDel, setConfirmDel] = useState(false)
+  const [phieu, setPhieu] = useState<{ type: MoveType; person?: string } | null>(null)
+  const [ed, setEd] = useState<SpecEd | null>(null)
+  const [reason, setReason] = useState('')
+  const [edErr, setEdErr] = useState('')
+  const [edSaving, setEdSaving] = useState(false)
+  const [devTasks, setDevTasks] = useState<Task[]>([])
+  const [empIds, setEmpIds] = useState<Map<string, string>>(new Map())
+
+  // Công việc gắn thiết bị này + bảng tên → id nhân viên (bấm tên người đang giữ mở trang nhân viên).
+  // Cả 2 API đều có cache, mở trang không tốn thêm lượt đọc đáng kể.
+  useEffect(() => {
+    let alive = true
+    fetch('/api/tasks').then((r) => r.json()).then((j) => { if (alive) setDevTasks(((j.data || []) as Task[]).filter((t) => t.deviceId === id)) }).catch(() => {})
+    fetch('/api/employees').then((r) => r.json()).then((j) => {
+      if (alive) setEmpIds(new Map(((j.data || []) as { id: string; full_name: string }[]).map((e) => [normalizeVi(e.full_name), e.id])))
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [id])
 
   const [reload, setReload] = useState(0)
   const load = () => setReload((n) => n + 1)
@@ -115,22 +149,49 @@ export default function DeviceDetailPage() {
 
   const holders = useMemo(() => (device ? computeHolders(moves, device.id).filter((h) => h.qty > 0) : []), [moves, device])
 
+  // Thanh Lưu: chỉ Trạng thái · Bảo hành · trường bổ sung. Mã / Loại / Hãng / Model / Seri + thông số
+  // sửa ở khung "Sửa thông số" riêng (khoá, có lý do) — không gửi lại ở đây để khỏi đè nhầm.
   async function save() {
     if (!form || !device) return
-    if (!form.asset_code.trim()) { setMsg({ ok: false, text: `${L.asset_code} không được để trống` }); return }
     setSaving(true); setMsg(null)
-    const fields = specFieldsOf(S, form.category).map((x) => x.key)
-    const keys = new Set([...fields, ...Object.keys(device.specs || {})])
-    const specs = Object.fromEntries([...keys].map((k) => [k, form.specs[k] || '']))
     const extra = Object.fromEntries(S.extraFields.map((x) => [x.key, form.extra[x.key] || '']))
     const res = await fetch(`/api/devices/${id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, category: form.category !== device.category ? form.category : undefined, specs, extra }),
+      body: JSON.stringify({ status: form.status, warranty_from: form.warranty_from, warranty_expiry: form.warranty_expiry, extra }),
     })
     const json = await res.json()
     setSaving(false)
     if (!res.ok) { setMsg({ ok: false, text: json.error || 'Chưa lưu được' }); return }
     setDevice(json.data); setForm(toForm(json.data)); setMsg({ ok: true, text: 'Đã lưu' })
+    setTimeout(() => setMsg(null), 2500)
+  }
+
+  function openEd() {
+    if (!device) return
+    setEd({ asset_code: device.asset_code, category: device.category, brand: device.brand || '', model: device.model || '', serial_number: device.serial_number || '', specs: { ...(device.specs || {}) } })
+    setReason(''); setEdErr('')
+    setOpen((o) => ({ ...o, specs: true }))
+  }
+  async function saveSpecs() {
+    if (!ed || !device) return
+    if (!ed.asset_code.trim()) { setEdErr(`${L.asset_code} không được để trống`); return }
+    setEdSaving(true); setEdErr('')
+    const keys = new Set([...specFieldsOf(S, ed.category).map((x) => x.key), ...Object.keys(device.specs || {})])
+    const res = await fetch(`/api/devices/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        asset_code: ed.asset_code, category: ed.category !== device.category ? ed.category : undefined,
+        brand: ed.brand, model: ed.model, serial_number: ed.serial_number,
+        specs: Object.fromEntries([...keys].map((k) => [k, ed.specs[k] || ''])), reason,
+      }),
+    })
+    const json = await res.json()
+    setEdSaving(false)
+    if (!res.ok) { setEdErr(json.error || 'Chưa lưu được'); return }
+    // Giữ nguyên phần Thông tin chung đang sửa dở (chưa bấm Lưu) — chỉ cập nhật phần thông số
+    setDevice(json.data)
+    setForm((cur) => (cur ? { ...toForm(json.data), status: cur.status, warranty_from: cur.warranty_from, warranty_expiry: cur.warranty_expiry, extra: cur.extra } : toForm(json.data)))
+    setEd(null); setMsg({ ok: true, text: 'Đã lưu thông số' })
     setTimeout(() => setMsg(null), 2500)
   }
 
@@ -158,7 +219,15 @@ export default function DeviceDetailPage() {
   const s = device.stock
   // Trường thông số của Loại đang chọn + giá trị cũ còn lưu nhưng trường đã bị bỏ (vẫn hiện để không mất)
   const defs = specFieldsOf(S, f.category)
-  const specFields = [...defs, ...Object.keys(f.specs).filter((k) => !defs.some((x) => x.key === k) && f.specs[k]).map((k) => ({ key: k, label: k, old: true }))]
+  const specFields: { key: string; label: string; required?: boolean; old?: boolean }[] = [...defs, ...Object.keys(f.specs).filter((k) => !defs.some((x) => x.key === k) && f.specs[k]).map((k) => ({ key: k, label: k, old: true }))]
+  const miss = missingSpecs(S, device.category, device.specs)
+  const roBox = 'w-full bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 flex items-center gap-2 min-h-[38px]'
+  const lockedVal = (v: string | null | undefined, mono?: boolean) => (
+    <div className={roBox}>{v ? <><Lock size={12} className="text-blue-300 shrink-0" /><span className={`truncate ${mono ? 'font-mono' : ''}`}>{v}</span></> : <span className="text-gray-500">—</span>}</div>
+  )
+  // Ô khoá trong khung sửa: Admin sửa mọi ô; người khác chỉ điền ô đang trống
+  const lockedFor = (orig: string | null | undefined) => !isAdmin && !!String(orig ?? '').trim()
+  const firstHolder = holders[0]?.name
 
   const rowsOf = (t: MoveType): Row[] => moves.filter((m) => m.type === t).map((m) => {
     const ls = m.lines.filter((l) => l.deviceId === device.id)
@@ -183,6 +252,22 @@ export default function DeviceDetailPage() {
         )}
       </div>
 
+      {/* Nút lập phiếu ngay tại thiết bị — mở popup điền sẵn mã này (10/10/2026) */}
+      {canWrite && (
+        <div className="flex flex-wrap items-center gap-2 mb-5">
+          {([['NK', '+ Nhập thêm', ArrowDownToLine, ''], ['XK', 'Cấp phát', ArrowUpFromLine, s.left > 0 ? '' : 'Hết tồn kho'],
+            ['TH', 'Thu hồi', RotateCcw, s.held > 0 ? '' : 'Chưa cấp cho ai'], ['LC', 'Luân chuyển', ArrowRightLeft, s.held > 0 ? '' : 'Chưa cấp cho ai']] as const).map(([t, label, Icon, why]) => (
+            <button key={t} disabled={!!why} title={why || undefined} onClick={() => setPhieu({ type: t, person: t === 'TH' || t === 'LC' ? firstHolder : undefined })}
+              className="flex items-center gap-2 bg-gray-900 border border-gray-700 hover:border-blue-500 px-4 py-2 rounded-lg text-sm disabled:opacity-40 disabled:hover:border-gray-700">
+              <Icon size={15} className="text-blue-400" /> {label}
+            </button>
+          ))}
+          <Link href={`/dashboard/tasks/new?deviceId=${device.id}`} className="flex items-center gap-2 bg-gray-900 border border-gray-700 hover:border-blue-500 px-4 py-2 rounded-lg text-sm">
+            <Wrench size={15} className="text-blue-400" /> Tạo công việc
+          </Link>
+        </div>
+      )}
+
       {!device.stock_migrated && isAdmin && (
         <div className="mb-4 text-sm bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-xl px-4 py-3">
           Thiết bị này chưa chuyển số liệu cũ sang Kho Tổng — đang tạm lấy số lượng cũ ({s.in}) làm Nhập kho. Sẽ đúng hẳn sau khi chạy chuyển dữ liệu.
@@ -191,21 +276,16 @@ export default function DeviceDetailPage() {
 
       {/* ===== Thông tin chung ===== */}
       <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-3 mb-4">
           <h2 className="font-semibold">Thông tin chung</h2>
-          {canWrite && <span className="text-xs text-gray-500">sửa xong bấm <b>Lưu</b> ở góc dưới</span>}
+          {canWrite && <span className="text-xs text-gray-500">sửa xong bấm <b>Lưu</b> ở góc dưới · {L.asset_code} · {L.category} · {L.brand} · {L.model} · {L.serial_number} đã khoá, sửa ở mục Thông số kĩ thuật</span>}
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          <Fld label={L.asset_code}><input className={input + ' font-mono'} disabled={ro} value={f.asset_code} onChange={(e) => set({ asset_code: e.target.value })} /></Fld>
-          <Fld label={L.category}>
-            <select className={input} disabled={ro} value={f.category} onChange={(e) => set({ category: e.target.value as DeviceCategory })}>
-              {!S.categories.some((c) => c.key === f.category) && <option value={f.category}>{catLabel(S, f.category)}</option>}
-              {S.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-            </select>
-          </Fld>
-          <Fld label={L.brand}><input className={input} disabled={ro} value={f.brand} onChange={(e) => set({ brand: e.target.value })} /></Fld>
-          <Fld label={L.model}><input className={input} disabled={ro} value={f.model} onChange={(e) => set({ model: e.target.value })} /></Fld>
-          <Fld label={L.serial_number}><input className={input} disabled={ro} value={f.serial_number} onChange={(e) => set({ serial_number: e.target.value })} /></Fld>
+          <Fld label={L.asset_code}>{lockedVal(device.asset_code, true)}</Fld>
+          <Fld label={L.category}>{lockedVal(catLabel(S, device.category))}</Fld>
+          <Fld label={L.brand}>{lockedVal(device.brand)}</Fld>
+          <Fld label={L.model}>{lockedVal(device.model)}</Fld>
+          <Fld label={L.serial_number}>{lockedVal(device.serial_number)}</Fld>
 
           <Stat label="Nhập kho" v={s.in} hint="cộng từ Lịch sử nhập kho" green />
           <Stat label="Đã cấp" v={s.out} hint="cộng từ Lịch sử cấp phát" />
@@ -244,17 +324,102 @@ export default function DeviceDetailPage() {
       {/* ===== Thông số kĩ thuật (riêng theo Loại) ===== */}
       <section className="bg-gray-900 border border-gray-800 rounded-xl mb-4">
         <FoldHead open={!!open.specs} onClick={() => toggle('specs')} title="Thông số kĩ thuật"
-          extra={<span className="text-xs px-2 py-0.5 rounded border border-amber-500/40 text-amber-400">riêng theo {L.category}: {catLabel(S, f.category)}</span>}
+          extra={<>
+            <span className="text-xs px-2 py-0.5 rounded border border-amber-500/40 text-amber-400">riêng theo {L.category}: {catLabel(S, f.category)}</span>
+            {miss.length
+              ? <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border border-amber-500/40 text-amber-400"><TriangleAlert size={12} /> Thiếu {miss.length} thông số bắt buộc</span>
+              : device.spec_lock && <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border border-blue-500/40 text-blue-300"><Lock size={12} /> Khoá {device.spec_lock.so ? `theo phiếu ${device.spec_lock.so}` : device.spec_lock.via === 'add' ? 'từ lúc thêm thiết bị' : 'từ lần bổ sung'} · {fmtDate(device.spec_lock.at.slice(0, 10))}</span>}
+          </>}
           count={`${specFields.filter((x) => f.specs[x.key]).length}/${specFields.length} trường có dữ liệu`} />
-        {open.specs && <div className="px-5 pb-5">{specFields.length ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {specFields.map((x) => (
-              <Fld key={x.key} label={'old' in x ? `${x.label} (trường cũ)` : x.label}>
-                <input className={input} disabled={ro} value={f.specs[x.key] || ''} onChange={(e) => set({ specs: { ...f.specs, [x.key]: e.target.value } })} />
-              </Fld>
-            ))}
-          </div>
-        ) : <p className="text-sm text-gray-500">{L.category} &quot;{catLabel(S, f.category)}&quot; chưa có trường thông số{isAdmin ? <> — thêm ở <Link href="/dashboard/giao-dien" className="text-blue-400 hover:underline">Sửa giao diện</Link></> : ''}.</p>}</div>}
+        {open.specs && <div className="px-5 pb-5">
+          {ed ? (
+            /* ----- Khung sửa: Admin sửa mọi ô (ghi lý do), người khác chỉ điền ô trống ----- */
+            <div>
+              <div className="text-xs text-gray-400 mb-2">{isAdmin ? 'Admin: sửa được mọi ô — sửa ô đã có giá trị phải ghi lý do.' : 'Chỉ điền được ô đang trống — ô đã có giá trị chỉ Admin sửa.'}</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
+                <Fld label={L.asset_code}><input className={input + ' font-mono'} disabled={!isAdmin} maxLength={60} value={ed.asset_code} onChange={(e) => setEd({ ...ed, asset_code: e.target.value })} /></Fld>
+                <Fld label={L.category}>
+                  <select className={input} disabled={!isAdmin} value={ed.category} onChange={(e) => setEd({ ...ed, category: e.target.value as DeviceCategory })}>
+                    {!S.categories.some((c) => c.key === ed.category) && <option value={ed.category}>{catLabel(S, ed.category)}</option>}
+                    {S.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                  </select>
+                </Fld>
+                <Fld label={L.brand}><input className={input} disabled={lockedFor(device.brand)} value={ed.brand} onChange={(e) => setEd({ ...ed, brand: e.target.value })} /></Fld>
+                <Fld label={L.model}><input className={input} disabled={lockedFor(device.model)} value={ed.model} onChange={(e) => setEd({ ...ed, model: e.target.value })} /></Fld>
+                <Fld label={L.serial_number}><input className={input} disabled={lockedFor(device.serial_number)} value={ed.serial_number} onChange={(e) => setEd({ ...ed, serial_number: e.target.value })} /></Fld>
+              </div>
+              {(() => {
+                const eDefs = specFieldsOf(S, ed.category)
+                const eFields = [...eDefs, ...Object.keys(device.specs || {}).filter((k) => !eDefs.some((x) => x.key === k) && device.specs[k]).map((k) => ({ key: k, label: `${k} (trường cũ)`, required: false }))]
+                return eFields.length ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {eFields.map((x) => (
+                      <Fld key={x.key} label={`${x.label}${x.required ? ' *' : ''}`}>
+                        <input className={`${input} ${x.required && !ed.specs[x.key]?.trim() ? '!border-amber-500/70' : ''}`} disabled={lockedFor(device.specs?.[x.key])}
+                          value={ed.specs[x.key] || ''} onChange={(e) => setEd({ ...ed, specs: { ...ed.specs, [x.key]: e.target.value } })} />
+                      </Fld>
+                    ))}
+                  </div>
+                ) : <p className="text-sm text-gray-500">{L.category} &quot;{catLabel(S, ed.category)}&quot; chưa có trường thông số.</p>
+              })()}
+              {isAdmin && (
+                <div className="mt-4 max-w-xl">
+                  <div className="text-xs text-gray-400 mb-1">Lý do sửa <b className="text-red-400">*</b> <span className="text-gray-500">(không cần nếu chỉ điền ô đang trống)</span></div>
+                  <input className={input} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="VD: nâng cấp Ram 16GB lên 32GB" />
+                </div>
+              )}
+              {edErr && <p className="mt-3 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{edErr}</p>}
+              <div className="flex gap-2 mt-3">
+                <button onClick={saveSpecs} disabled={edSaving} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-4 py-2 rounded-lg text-sm font-medium"><Save size={14} /> {edSaving ? 'Đang lưu…' : 'Lưu thông số'}</button>
+                <button onClick={() => { setEd(null); setEdErr('') }} className="border border-gray-700 hover:border-gray-500 px-4 py-2 rounded-lg text-sm text-gray-300">Huỷ</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {miss.length > 0 && (
+                <div className="mb-4 text-sm bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
+                  <span>Còn thiếu thông số bắt buộc: <b>{miss.map((x) => x.label).join(', ')}</b>. Ô trống điền được ngay, không cần lý do — lần Nhập kho sau cũng sẽ bắt điền nốt.</span>
+                  <span className="flex-1" />
+                  {canWrite && <button onClick={openEd} className="bg-amber-500 hover:bg-amber-400 text-gray-900 font-semibold px-3 py-1.5 rounded-lg text-sm">Bổ sung thông số</button>}
+                </div>
+              )}
+              {specFields.length ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {specFields.map((x) => {
+                    const v = device.specs?.[x.key]
+                    return (
+                      <Fld key={x.key} label={`${x.old ? `${x.label} (trường cũ)` : x.label}${x.required ? ' *' : ''}`}>
+                        {v ? lockedVal(v) : <div className={`${roBox} border-dashed`}><span className={x.required ? 'text-amber-400' : 'text-gray-500'}>— chưa có</span></div>}
+                      </Fld>
+                    )
+                  })}
+                </div>
+              ) : <p className="text-sm text-gray-500">{L.category} &quot;{catLabel(S, f.category)}&quot; chưa có trường thông số{isAdmin ? <> — thêm ở <Link href="/dashboard/giao-dien" className="text-blue-400 hover:underline">Sửa giao diện</Link></> : ''}.</p>}
+              <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-gray-800">
+                <span className="text-xs text-gray-500 flex items-center gap-1"><Lock size={11} /> Thông số nhà sản xuất — đã có giá trị là khoá, không ai sửa nhầm được.</span>
+                <span className="flex-1" />
+                {canWrite && !isAdmin && !miss.length && specFields.some((x) => !device.specs?.[x.key]) && (
+                  <button onClick={openEd} className="flex items-center gap-1.5 border border-gray-700 hover:border-blue-500 px-3 py-1.5 rounded-lg text-sm text-gray-300"><Pencil size={13} /> Bổ sung ô trống</button>
+                )}
+                {isAdmin && (
+                  <button onClick={openEd} className="flex items-center gap-1.5 border border-gray-700 hover:border-amber-500 hover:text-amber-300 px-3 py-1.5 rounded-lg text-sm text-gray-300"><Pencil size={13} /> Sửa thông số (chỉ Admin)</button>
+                )}
+              </div>
+              {device.spec_log?.length > 0 && (
+                <div className="mt-4">
+                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Lịch sử sửa thông số</div>
+                  {[...device.spec_log].sort((a, b) => (a.at < b.at ? 1 : -1)).map((x, k) => (
+                    <div key={k} className="text-sm text-gray-300 py-1.5 border-b border-gray-800/60 last:border-0">
+                      <span className="text-gray-500 text-xs">{fmtDate(x.at.slice(0, 10))} · {x.by || '—'} · {x.kind === 'edit' ? 'Sửa' : 'Bổ sung'}</span>{' — '}
+                      {x.changes.map((c, j) => <span key={j}>{j > 0 && '; '}{c.field}: {c.from ? <span className="text-gray-500 line-through">{c.from}</span> : <span className="text-gray-500">(trống)</span>} → <b>{c.to || '(trống)'}</b></span>)}
+                      {x.reason && <i className="text-gray-400"> · {x.reason}</i>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>}
       </section>
 
       {/* ===== 4 bảng lịch sử ===== */}
@@ -321,6 +486,27 @@ export default function DeviceDetailPage() {
         )
       })}
 
+      {/* ===== Công việc gắn thiết bị này (10/10/2026) ===== */}
+      <section className="bg-gray-900 border border-gray-800 rounded-xl mb-4">
+        <FoldHead open={!!open.tasks} onClick={() => toggle('tasks')} title="Công việc của thiết bị" count={`${devTasks.length} việc`}
+          extra={<span className="text-xs text-gray-500">sửa chữa, bảo hành, cài đặt… gắn đúng mã này</span>} />
+        {open.tasks && <div className="px-5 pb-5">
+          {devTasks.length ? devTasks.map((t) => {
+            const st = computeTaskStatus(t.dueDate, t.completed)
+            return (
+              <div key={t.id} className="flex flex-wrap items-center gap-3 border-b border-gray-800/60 last:border-0 py-2 text-sm">
+                <span className="text-gray-300 w-20">{TASK_TYPE_LABEL[t.type] || t.type}</span>
+                <Link href="/dashboard/tasks" className="flex-1 min-w-[180px] hover:text-blue-400">{t.title}</Link>
+                <span className="text-gray-400">{t.assigneeName || 'Chưa phân công'}</span>
+                <span className="text-gray-500 font-mono text-xs">{fmtDate(t.dueDate)}</span>
+                <span className={`px-2 py-0.5 rounded-md text-xs font-medium ${TASK_STATUS_COLOR[st]}`}>{TASK_STATUS_LABEL[st]}</span>
+              </div>
+            )
+          }) : <p className="text-sm text-gray-500">Chưa có công việc nào gắn thiết bị này.</p>}
+          {canWrite && <Link href={`/dashboard/tasks/new?deviceId=${device.id}`} className="mt-2 inline-flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300"><Wrench size={13} /> Tạo công việc cho thiết bị này</Link>}
+        </div>}
+      </section>
+
       <div className="grid md:grid-cols-3 gap-5">
         {/* ===== Đang giữ thiết bị ===== */}
         <section className="md:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-5">
@@ -331,12 +517,22 @@ export default function DeviceDetailPage() {
           </div>
           {holders.length ? (
             <div className="flex flex-wrap gap-2">
-              {holders.map((h) => (
-                <div key={h.key} className="flex items-center gap-2 border border-gray-700 rounded-lg px-3 py-2 text-sm">
-                  <User size={14} className="text-blue-400" /> {h.name}{h.pb && <span className="text-gray-500 text-xs">· {h.pb}</span>}
-                  <b className="font-mono text-green-400">{h.qty}</b>
-                </div>
-              ))}
+              {holders.map((h) => {
+                const empId = empIds.get(normalizeVi(h.name))
+                return (
+                  <div key={h.key} className="flex flex-wrap items-center gap-2 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                    <User size={14} className="text-blue-400" />
+                    {empId ? <Link href={`/dashboard/employees/${empId}`} className="hover:text-blue-400 hover:underline">{h.name}</Link> : h.name}
+                    {h.pb && <span className="text-gray-500 text-xs">· {h.pb}</span>}
+                    <b className="font-mono text-green-400">{h.qty}</b>
+                    {canWrite && <>
+                      <span className="w-px h-4 bg-gray-700 mx-1" />
+                      <button onClick={() => setPhieu({ type: 'TH', person: h.name })} className="text-xs text-amber-300 hover:underline">Thu hồi</button>
+                      <button onClick={() => setPhieu({ type: 'LC', person: h.name })} className="text-xs text-purple-300 hover:underline">Chuyển</button>
+                    </>}
+                  </div>
+                )
+              })}
             </div>
           ) : <p className="text-sm text-gray-500">Chưa ai giữ — tất cả đang ở kho</p>}
         </section>
@@ -370,6 +566,14 @@ export default function DeviceDetailPage() {
       )}
 
       {preview && <PrintPreview move={preview} onClose={() => setPreview(null)} />}
+      {phieu && (
+        <PhieuModal type={phieu.type} presetDeviceId={device.id} presetPerson={phieu.person} onClose={() => setPhieu(null)}
+          onSaved={(m, x) => {
+            setPhieu(null); load()
+            if (x?.repairCreated) fetch('/api/tasks').then((r) => r.json()).then((j) => setDevTasks(((j.data || []) as Task[]).filter((t) => t.deviceId === id))).catch(() => {})
+            setMsg({ ok: true, text: `Đã lưu phiếu ${m.so}${x?.repairCreated ? ` · đã tạo ${x.repairCreated} Công việc Sửa chữa` : ''}` }); setTimeout(() => setMsg(null), 3500)
+          }} />
+      )}
 
       {confirmDel && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">

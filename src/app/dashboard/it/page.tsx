@@ -3,7 +3,7 @@
 // phiếu gần đây. Đợt 2: ô nào hiện / tên / thứ tự do Admin chỉnh ở "Sửa giao diện → Ô Tổng quan".
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Package, CheckCircle, Archive, XCircle, Users, ClipboardCheck, ArrowRight, Ban, Boxes, Tag, Pencil } from 'lucide-react'
+import { Package, CheckCircle, Archive, XCircle, Users, ClipboardCheck, ArrowRight, Ban, Boxes, Tag, Pencil, TriangleAlert } from 'lucide-react'
 import { MOVE_DEFS, fmtDate } from '@/lib/kho/config'
 import { catLabel, type TileKind } from '@/lib/kho/settings'
 import { useKhoSettings } from '@/lib/kho/useKhoSettings'
@@ -13,6 +13,7 @@ import type { FirestoreMove } from '@/lib/firestore/types'
 interface Stats {
   total: number; in_use: number; in_stock: number; broken: number; liquidated: number; employees: number
   tasks: number; tasks_total: number; units_left: number; by_category: Record<string, number>
+  missing_specs: number
 }
 
 // Hình + màu + link của từng kiểu ô
@@ -26,6 +27,7 @@ const TILE_LOOK: Record<TileKind, { icon: React.ElementType; color: string; bg: 
   employees: { icon: Users, color: 'text-orange-400', bg: 'bg-orange-400/10', href: () => '/dashboard/employees' },
   tasks: { icon: ClipboardCheck, color: 'text-cyan-400', bg: 'bg-cyan-400/10', href: () => '/dashboard/tasks' },
   category: { icon: Tag, color: 'text-amber-400', bg: 'bg-amber-400/10', href: (arg) => `/dashboard/devices?category=${encodeURIComponent(arg || '')}` },
+  missing_specs: { icon: TriangleAlert, color: 'text-amber-400', bg: 'bg-amber-400/10', href: () => '/dashboard/devices?missing=1' },
 }
 
 const MOVE_COLOR: Record<string, string> = { NK: 'text-green-400', XK: 'text-blue-400', TH: 'text-orange-400', LC: 'text-purple-400' }
@@ -62,6 +64,13 @@ export default function KhoITOverview() {
         )}
       </div>
 
+      {/* Cấu hình ô đã lưu từ trước chưa có ô "Thiếu thông số" → vẫn nhắc bằng 1 dòng (10/10/2026) */}
+      {!loading && !!stats?.missing_specs && !S.tiles.some((t) => t.kind === 'missing_specs') && (
+        <Link href="/dashboard/devices?missing=1" className="mb-4 flex items-center gap-2 text-sm bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-xl px-4 py-3 hover:border-amber-500/60">
+          <TriangleAlert size={16} /> <b>{stats.missing_specs}</b> thiết bị còn thiếu thông số bắt buộc — bấm để xem, bổ sung ở trang chi tiết hoặc khi nhập kho
+          <ArrowRight size={14} className="ml-auto" />
+        </Link>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
         {tiles.map(({ id, label, value, icon: Icon, color, bg, href, sub }) => (
           <Link key={id} href={href} className="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-5 transition-colors group">
