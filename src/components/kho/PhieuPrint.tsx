@@ -79,7 +79,8 @@ export function PhieuSheet({ move, draft, cfg }: { move: PrintableMove; draft?: 
         <tbody>
           {P.showLetter && (
             <tr style={{ textAlign: 'center', fontStyle: 'italic', fontWeight: 700, fontSize: '11pt' }}>
-              {['A', 'B', 'C', 'D', '1', 'E', 'F'].map((x) => <td key={x} style={{ padding: 3 }}>{x}</td>)}
+              {/* Ký hiệu cột toàn chữ A→G (Sếp chốt 20/10/2026 — trước là A B C D 1 E F theo kiểu kế toán, dễ tưởng gõ nhầm) */}
+              {['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((x) => <td key={x} style={{ padding: 3 }}>{x}</td>)}
             </tr>
           )}
           {move.lines.map((l, k) => (
