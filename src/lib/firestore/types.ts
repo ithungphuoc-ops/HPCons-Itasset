@@ -1,3 +1,5 @@
+import type { MovePhoto } from "@/lib/kho/photos";
+
 // Kiểu dữ liệu Firestore (camelCase) — dùng nội bộ trong tầng data-access.
 // Route Handler tự map sang shape cũ (snake_case, xem src/lib/types/index.ts)
 // trước khi trả JSON, để giữ nguyên hợp đồng API cho phần còn lại của app.
@@ -120,6 +122,12 @@ export interface FirestoreMove {
   dnSo: string | null;   // Theo đề nghị số
   dnDate: string | null;
   lines: MoveLine[];
+  // ---- Ảnh đính kèm (22/10/2026) — ảnh lưu R2, ở đây chỉ giữ khoá ----
+  photos?: MovePhoto[] | null;      // ảnh thiết bị lúc lập phiếu
+  signed?: MovePhoto[] | null;      // ảnh phiếu đã in + ký
+  signPending?: boolean | null;     // phiếu phải ký mà chưa tải ảnh phiếu đã ký ("Chờ ký")
+  signedAt?: string | null;
+  signedBy?: string | null;
   deviceIds: string[];   // để query array-contains khi mở chi tiết 1 thiết bị
   people: string[];      // tên người đã chuẩn hoá (bỏ dấu) — cho "Thiết bị của tôi"
   createdAt: string;

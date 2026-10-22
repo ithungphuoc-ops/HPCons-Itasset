@@ -3,7 +3,7 @@
 // phiếu gần đây. Đợt 2: ô nào hiện / tên / thứ tự do Admin chỉnh ở "Sửa giao diện → Ô Tổng quan".
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Package, CheckCircle, Archive, XCircle, Users, ClipboardCheck, ArrowRight, Ban, Boxes, Tag, Pencil, TriangleAlert } from 'lucide-react'
+import { Package, CheckCircle, Archive, XCircle, Users, ClipboardCheck, ArrowRight, Ban, Boxes, Tag, Pencil, TriangleAlert, PenLine } from 'lucide-react'
 import { MOVE_DEFS, fmtDate } from '@/lib/kho/config'
 import { catLabel, type TileKind } from '@/lib/kho/settings'
 import { useKhoSettings } from '@/lib/kho/useKhoSettings'
@@ -14,6 +14,7 @@ interface Stats {
   total: number; in_use: number; in_stock: number; broken: number; liquidated: number; employees: number
   tasks: number; tasks_total: number; units_left: number; by_category: Record<string, number>
   missing_specs: number
+  pending_sign: number
 }
 
 // Hình + màu + link của từng kiểu ô
@@ -28,6 +29,7 @@ const TILE_LOOK: Record<TileKind, { icon: React.ElementType; color: string; bg: 
   tasks: { icon: ClipboardCheck, color: 'text-cyan-400', bg: 'bg-cyan-400/10', href: () => '/dashboard/tasks' },
   category: { icon: Tag, color: 'text-amber-400', bg: 'bg-amber-400/10', href: (arg) => `/dashboard/devices?category=${encodeURIComponent(arg || '')}` },
   missing_specs: { icon: TriangleAlert, color: 'text-amber-400', bg: 'bg-amber-400/10', href: () => '/dashboard/devices?missing=1' },
+  pending_sign: { icon: PenLine, color: 'text-amber-400', bg: 'bg-amber-400/10', href: () => '/dashboard/devices?pending=1' },
 }
 
 const MOVE_COLOR: Record<string, string> = { NK: 'text-green-400', XK: 'text-blue-400', TH: 'text-orange-400', LC: 'text-purple-400' }
@@ -68,6 +70,13 @@ export default function KhoITOverview() {
       {!loading && !!stats?.missing_specs && !S.tiles.some((t) => t.kind === 'missing_specs') && (
         <Link href="/dashboard/devices?missing=1" className="mb-4 flex items-center gap-2 text-sm bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-xl px-4 py-3 hover:border-amber-500/60">
           <TriangleAlert size={16} /> <b>{stats.missing_specs}</b> thiết bị còn thiếu thông số bắt buộc — bấm để xem, bổ sung ở trang chi tiết hoặc khi nhập kho
+          <ArrowRight size={14} className="ml-auto" />
+        </Link>
+      )}
+      {/* Cấu hình ô cũ chưa có ô "Phiếu chờ ký" → vẫn nhắc bằng 1 dòng (22/10/2026) */}
+      {!loading && !!stats?.pending_sign && !S.tiles.some((t) => t.kind === 'pending_sign') && (
+        <Link href="/dashboard/devices?pending=1" className="mb-4 flex items-center gap-2 text-sm bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-xl px-4 py-3 hover:border-amber-500/60">
+          <PenLine size={16} /> <b>{stats.pending_sign}</b> phiếu đã in nhưng chưa tải ảnh phiếu có chữ ký — bấm để tải lên
           <ArrowRight size={14} className="ml-auto" />
         </Link>
       )}

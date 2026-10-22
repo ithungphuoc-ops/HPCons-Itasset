@@ -16,10 +16,10 @@ import {
 import { setKhoSettingsCache } from '@/lib/kho/useKhoSettings'
 import { PhieuSheet, type PrintableMove } from '@/components/kho/PhieuPrint'
 
-type Tab = 'cats' | 'fields' | 'cols' | 'conds' | 'tiles' | 'print' | 'people'
+type Tab = 'cats' | 'fields' | 'cols' | 'conds' | 'tiles' | 'print' | 'photo' | 'people'
 const TABS: [Tab, string][] = [
   ['cats', 'Loại & Thông số'], ['fields', 'Trường Thông tin chung'], ['cols', 'Cột danh sách'],
-  ['conds', 'Tình trạng'], ['tiles', 'Ô Tổng quan'], ['print', 'Mẫu phiếu in'], ['people', 'Người Công việc'],
+  ['conds', 'Tình trạng'], ['tiles', 'Ô Tổng quan'], ['print', 'Mẫu phiếu in'], ['photo', 'Ảnh & phiếu ký'], ['people', 'Người Công việc'],
 ]
 const EXTRA_TYPE_LABEL: Record<ExtraType, string> = { text: 'Chữ', number: 'Số', date: 'Ngày', select: 'Lựa chọn' }
 const inputW = 'bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500'
@@ -261,6 +261,42 @@ export default function GiaoDienPage() {
             ))}
           </div>
           <button type="button" onClick={() => set({ conditions: [...D.conditions, 'Tình trạng mới'] })} className="mt-3 flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300"><Plus size={14} /> Thêm tình trạng</button>
+        </section>
+      )}
+
+      {/* ===== Ảnh & phiếu ký (22/10/2026) ===== */}
+      {tab === 'photo' && (
+        <section className="bg-gray-900 border border-gray-800 rounded-xl p-4 max-w-3xl">
+          <h2 className="font-semibold mb-1">Ảnh đính kèm phiếu</h2>
+          <p className="text-xs text-gray-500 mb-3"><b className="text-gray-300">Phải in ký</b>: lưu phiếu xong ở trạng thái &quot;Chờ ký&quot; cho tới khi tải ảnh phiếu đã ký (số liệu tồn / người đang giữ vẫn cập nhật ngay lúc lưu). <b className="text-gray-300">Ảnh thiết bị</b>: chụp / chọn lúc lập phiếu — bắt buộc thì thiếu ảnh không lưu được. Ảnh lưu trên R2, không tốn Firebase.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[520px]">
+              <thead><tr className="text-left text-xs text-gray-400 border-b border-gray-800"><th className="py-2">Phiếu</th><th className="py-2">Phiếu đã ký</th><th className="py-2">Ảnh thiết bị lúc lập phiếu</th></tr></thead>
+              <tbody>
+                {MOVE_ORDER.map((t) => (
+                  <tr key={t} className="border-b border-gray-800/60">
+                    <td className="py-2 pr-3">{MOVE_DEFS[t].label}</td>
+                    <td className="py-2 pr-3">
+                      <select className={inputW + ' w-full'} value={D.photo.sign[t] ? '1' : '0'} onChange={(e) => set({ photo: { ...D.photo, sign: { ...D.photo.sign, [t]: e.target.value === '1' } } })}>
+                        <option value="1">Phải in ký, tải phiếu đã ký</option><option value="0">Không cần</option>
+                      </select>
+                    </td>
+                    <td className="py-2">
+                      <select className={inputW + ' w-full'} value={D.photo.require[t] ? '1' : '0'} onChange={(e) => set({ photo: { ...D.photo, require: { ...D.photo.require, [t]: e.target.value === '1' } } })}>
+                        <option value="0">Không bắt buộc</option><option value="1">Bắt buộc ít nhất 1 ảnh</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center gap-2 mt-3 text-sm">
+            <span className="text-gray-400">Tối đa</span>
+            <input type="number" min={1} max={20} className={inputW + ' w-20'} value={D.photo.max}
+              onChange={(e) => set({ photo: { ...D.photo, max: Math.min(20, Math.max(1, Math.round(Number(e.target.value) || 1))) } })} />
+            <span className="text-gray-400">ảnh thiết bị / phiếu</span>
+          </div>
         </section>
       )}
 

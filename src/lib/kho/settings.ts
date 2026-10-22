@@ -31,13 +31,16 @@ export const LIST_COL_LABEL: Record<ListCol, string> = {
 const LIST_DEFAULT: Record<ListCol, boolean> = { brand: true, model: true, serial_number: true, in: true, out: true, back: false, move: false, left: true, status: true, warranty: true }
 
 // Ô Tổng quan
-export type TileKind = 'total' | 'in_use' | 'in_stock' | 'broken' | 'liquidated' | 'units_left' | 'employees' | 'tasks' | 'category' | 'missing_specs'
+export type TileKind = 'total' | 'in_use' | 'in_stock' | 'broken' | 'liquidated' | 'units_left' | 'employees' | 'tasks' | 'category' | 'missing_specs' | 'pending_sign'
 export const TILE_KIND_LABEL: Record<TileKind, string> = {
   total: 'Tổng thiết bị', in_use: 'Đang sử dụng', in_stock: 'Trong kho', broken: 'Hỏng', liquidated: 'Thanh lý',
   units_left: 'Số cái còn trong kho', employees: 'Nhân viên', tasks: 'Công việc chưa xong', category: 'Đếm theo 1 Loại',
-  missing_specs: 'Thiếu thông số',
+  missing_specs: 'Thiếu thông số', pending_sign: 'Phiếu chờ ký',
 }
 export interface TileDef { id: string; kind: TileKind; label: string; arg?: string }
+
+export interface PhotoCfg { sign: Record<MoveType, boolean>; require: Record<MoveType, boolean>; max: number }
+const PHOTO_DEFAULT: PhotoCfg = { sign: { NK: false, XK: true, TH: true, LC: true }, require: { NK: false, XK: false, TH: false, LC: false }, max: 10 }
 
 export interface PrintTypeCfg { title: string; sign: string[]; foot: string }
 export interface PrintCfg {
@@ -57,6 +60,9 @@ export interface KhoSettings {
   // Đợt 3: danh sách người riêng cho Công việc (4-5 người dùng) — Phụ trách chọn từ đây,
   // Người yêu cầu gợi ý từ đây (vẫn gõ tay được)
   taskPeople: string[]
+  // Ảnh đính kèm phiếu (22/10/2026): sign = phiếu phải in ký + tải ảnh phiếu đã ký (chưa tải → "Chờ ký");
+  // require = bắt buộc có ảnh thiết bị lúc lập phiếu; max = số ảnh tối đa / phiếu
+  photo: PhotoCfg
   updatedAt?: string | null
   updatedBy?: string | null
 }
@@ -76,6 +82,7 @@ export function defaultSettings(): KhoSettings {
       { id: 't5', kind: 'employees', label: 'Nhân viên' },
       { id: 't6', kind: 'tasks', label: 'Công việc' },
       { id: 't7', kind: 'missing_specs', label: 'Thiếu thông số' },
+      { id: 't8', kind: 'pending_sign', label: 'Phiếu chờ ký' },
     ],
     print: {
       coName: PRINT_DEFAULTS.coName, coAddr: PRINT_DEFAULTS.coAddr, coTax: PRINT_DEFAULTS.coTax, khoName: PRINT_DEFAULTS.khoName,
@@ -83,6 +90,7 @@ export function defaultSettings(): KhoSettings {
       types: Object.fromEntries(MOVE_ORDER.map((t) => [t, { title: MOVE_DEFS[t].title, sign: [...MOVE_DEFS[t].sign], foot: '' }])) as Record<MoveType, PrintTypeCfg>,
     },
     taskPeople: [], // Admin tự nhập ở Sửa giao diện (tên cũ trong TASK_ASSIGNEES chỉ là tên tạm của demo)
+    photo: { sign: { ...PHOTO_DEFAULT.sign }, require: { ...PHOTO_DEFAULT.require }, max: PHOTO_DEFAULT.max },
     updatedAt: null,
     updatedBy: null,
   }
@@ -167,8 +175,19 @@ export function normalizeSettings(raw: unknown): KhoSettings {
 
   const taskPeople = Array.isArray(r.taskPeople) ? [...new Set(r.taskPeople.map((x) => str(x, 80)).filter(Boolean))].slice(0, 50) : d.taskPeople
 
+  // Cấu hình cũ chưa có mục ảnh → mặc định (Cấp phát / Thu hồi / Luân chuyển phải ký)
+  const ph = (r.photo && typeof r.photo === 'object' ? r.photo : {}) as Partial<PhotoCfg>
+  const flags = (src: unknown, def: Record<MoveType, boolean>) =>
+    Object.fromEntries(MOVE_ORDER.map((t) => { const v = src && typeof src === 'object' ? (src as Record<string, unknown>)[t] : undefined; return [t, typeof v === 'boolean' ? v : def[t]] })) as Record<MoveType, boolean>
+  const photo: PhotoCfg = {
+    sign: flags(ph.sign, d.photo.sign),
+    require: flags(ph.require, d.photo.require),
+    max: Number.isInteger(ph.max) && (ph.max as number) >= 1 && (ph.max as number) <= 20 ? (ph.max as number) : d.photo.max,
+  }
+
   return {
     taskPeople,
+    photo,
     categories: categories.length ? categories : d.categories,
     conditions: conditions.length ? conditions : d.conditions,
     fieldLabels, extraFields, listColumns, tiles, print,

@@ -7,6 +7,8 @@ import { computeHolders } from "@/lib/kho/holders";
 import { getKhoSettings } from "@/lib/firestore/settings";
 import { deviceNameS, missingSpecs, specFieldsOf, type KhoSettings } from "@/lib/kho/settings";
 import { MOVE_DEFS, TAX_CODE_RE, assetCodeError, normalizeVi, stockHeld, stockLeft, type StockNumbers } from "@/lib/kho/config";
+import { cleanPhotos, type MovePhoto } from "@/lib/kho/photos";
+import { deleteFiles } from "@/lib/r2";
 import type { DeviceStatus, FirestoreDevice, FirestoreMove, MoveLine, MoveType } from "@/lib/firestore/types";
 
 // Phiếu Nhập kho / Cấp phát / Thu hồi / Luân chuyển (Kho Tổng, 30/09/2026).
@@ -77,6 +79,8 @@ export interface CreateMoveInput {
   // deviceId = thiết bị có sẵn · newDevice = khai báo mới (chỉ Nhập kho) · fillSpecs = điền nốt ô
   // thông số còn trống của thiết bị có sẵn (Nhập kho bắt buộc đủ ô bắt buộc mới lưu được)
   lines: { deviceId?: string; newDevice?: NewDeviceInput | null; fillSpecs?: Record<string, string> | null; qty: number; condition: string; note?: string | null }[];
+  // Ảnh thiết bị lúc lập phiếu (đã tải lên R2 qua /api/uploads) — 22/10/2026
+  photos?: unknown;
 }
 
 const cut = (v: unknown, max = 120) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -125,6 +129,10 @@ export async function createMove(input: CreateMoveInput, createdBy: string | nul
 
   // Danh sách Tình trạng + tên Loại lấy theo "Sửa giao diện" (cache 60s)
   const settings = await getKhoSettings();
+  // Ảnh thiết bị (tuỳ chọn; Admin có thể bắt buộc theo loại phiếu) + phiếu phải in ký → "Chờ ký"
+  const photos = cleanPhotos(input.photos, settings.photo.max);
+  if (settings.photo.require[input.type] && !photos.length) throw new MoveError(`Phiếu ${def.label} bắt buộc có ít nhất 1 ảnh thiết bị`);
+  const mustSign = !!settings.photo.sign[input.type];
   // Gộp số lượng theo thiết bị để kiểm tra tồn đúng khi 1 thiết bị nằm ở nhiều dòng
   const qtyByDevice = new Map<string, number>();
   const newDevices = new Map<string, NewDeviceInput>(); // id cấp sẵn → thiết bị khai báo mới
@@ -258,6 +266,11 @@ export async function createMove(input: CreateMoveInput, createdBy: string | nul
       people: [info.nguoi, info.nguoi2].filter(Boolean).map((x) => normalizeVi(x!)),
       createdAt: now,
       createdBy,
+      photos,
+      signed: [],
+      signPending: mustSign,
+      signedAt: null,
+      signedBy: null,
     };
 
     for (const [id, qty] of qtyByDevice) {
@@ -295,10 +308,12 @@ export async function createMove(input: CreateMoveInput, createdBy: string | nul
 /** Xoá phiếu lập nhầm (chỉ Admin) — trả lại số liệu tồn như trước khi lập phiếu. */
 export async function deleteMove(id: string): Promise<void> {
   const ref = collection().doc(id);
+  let fileKeys: string[] = [];
   await adminDb.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) throw new MoveError("Không tìm thấy phiếu");
     const move = fromDoc(snap);
+    fileKeys = [...(move.photos || []), ...(move.signed || [])].map((p) => p.key);
     const qtyByDevice = new Map<string, number>();
     move.lines.forEach((l) => qtyByDevice.set(l.deviceId, (qtyByDevice.get(l.deviceId) || 0) + l.qty));
     const ids = [...qtyByDevice.keys()];
@@ -341,6 +356,34 @@ export async function deleteMove(id: string): Promise<void> {
     tx.delete(ref);
   });
   revalidateTag(TAG_DEVICES, { expire: 0 });
+  // Phiếu đã xoá thì ảnh đi kèm cũng xoá trên R2 (việc phụ, lỗi thì bỏ qua)
+  await deleteFiles(fileKeys);
+}
+
+/**
+ * Tải ảnh phiếu đã in + ký (22/10/2026). Nối thêm vào ảnh đã có (phiếu nhiều trang), tối đa 20 ảnh;
+ * có ảnh là phiếu hết "Chờ ký". Số liệu tồn / người đang giữ đã cập nhật lúc lưu phiếu, ở đây không đụng.
+ */
+export async function addSignedPhotos(id: string, raw: unknown, by: string | null): Promise<FirestoreMove> {
+  const add = cleanPhotos(raw, 20);
+  if (!add.length) throw new MoveError("Chưa có ảnh phiếu đã ký");
+  const ref = collection().doc(id);
+  return adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new MoveError("Không tìm thấy phiếu");
+    const move = fromDoc(snap);
+    const have = new Set((move.signed || []).map((p) => p.key));
+    const signed: MovePhoto[] = [...(move.signed || []), ...add.filter((p) => !have.has(p.key))].slice(0, 20);
+    const patch = { signed, signPending: false, signedAt: new Date().toISOString(), signedBy: by };
+    tx.set(ref, patch, { merge: true });
+    return { ...move, ...patch };
+  });
+}
+
+/** Phiếu đang "Chờ ký" (đã lưu, chưa tải ảnh phiếu đã ký) — chỉ mục 1 trường, không cần chỉ mục ghép */
+export async function listPendingSign(): Promise<FirestoreMove[]> {
+  const snap = await collection().where("signPending", "==", true).limit(300).get();
+  return snap.docs.map(fromDoc).sort(byDateDesc);
 }
 
 export async function getMove(id: string): Promise<FirestoreMove | null> {

@@ -15,6 +15,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowDownToLine, ArrowLeft, ArrowRightLeft, ArrowUpFromLine, ChevronRight, Download, Lock, Pencil, Printer, QrCode, RotateCcw, Save, Search, Trash2, TriangleAlert, Undo2, User, Wrench, X } from 'lucide-react'
 import PhieuModal from '@/components/kho/PhieuModal'
+import { PhotoCell, PhotoLightbox, SignStatus, type Lightbox } from '@/components/kho/Photos'
 import type { Task } from '@/lib/types'
 import DatePicker from '@/components/DatePicker'
 import { useRole } from '@/lib/hooks/useRole'
@@ -101,6 +102,7 @@ export default function DeviceDetailPage() {
   const [flt, setFlt] = useState<Partial<Record<MoveType, Flt>>>({})
   const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }))
   const [preview, setPreview] = useState<PrintableMove | null>(null)
+  const [lb, setLb] = useState<Lightbox>(null) // xem ảnh phiếu to (22/10/2026)
   const [confirmDel, setConfirmDel] = useState(false)
   const [phieu, setPhieu] = useState<{ type: MoveType; person?: string } | null>(null)
   const [ed, setEd] = useState<SpecEd | null>(null)
@@ -434,6 +436,8 @@ export default function DeviceDetailPage() {
           (!F.from || r.m.date >= F.from) && (!F.to || r.m.date <= F.to) &&
           (!q || normalizeVi([r.m.so || '', ...COLS[t].map(([, get]) => get(r))].join(' ')).includes(q)))
         const filtering = !!(F.q || F.who || F.from || F.to)
+        // Cột "Phiếu ký": loại phiếu phải in ký (Sửa giao diện) hoặc đã có phiếu ký / chờ ký từ trước
+        const showSign = !!S.photo.sign[t] || all.some((r) => r.m.signed?.length || r.m.signPending)
         return (
           <section key={t} className="bg-gray-900 border border-gray-800 rounded-xl mb-4">
             <FoldHead open={!!open[t]} onClick={() => toggle(t)} title={MOVE_DEFS[t].history} count={filtering ? `${rows.length} / ${all.length} phiếu (đang lọc)` : `${all.length} phiếu`} />
@@ -465,6 +469,8 @@ export default function DeviceDetailPage() {
                   <tr className="text-left text-xs text-gray-400 border-b border-gray-800 bg-gray-800/30">
                     <th className="px-3 py-2">Số phiếu</th>
                     {COLS[t].map(([h]) => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
+                    <th className="px-3 py-2 whitespace-nowrap">Ảnh</th>
+                    {showSign && <th className="px-3 py-2 whitespace-nowrap">Phiếu ký</th>}
                     <th className="px-3 py-2 w-24" />
                   </tr>
                 </thead>
@@ -473,12 +479,14 @@ export default function DeviceDetailPage() {
                     <tr key={r.m.id} className="border-b border-gray-800/60 last:border-0">
                       <td className="px-3 py-2 font-mono text-xs text-blue-300 whitespace-nowrap">{r.m.so || <span className="text-gray-500">dữ liệu cũ</span>}</td>
                       {COLS[t].map(([h, get]) => <td key={h} className="px-3 py-2">{get(r) || <span className="text-gray-600">—</span>}</td>)}
+                      <td className="px-3 py-2"><PhotoCell photos={r.m.photos} caption={`phiếu ${r.m.so || 'cũ'} · ảnh thiết bị`} onView={setLb} /></td>
+                      {showSign && <td className="px-3 py-2"><SignStatus move={r.m} canWrite={canWrite} onView={setLb} onSigned={(nm) => setMoves((ms) => ms.map((x) => (x.id === nm.id ? nm : x)))} /></td>}
                       <td className="px-3 py-2 whitespace-nowrap text-right">
                         <button title="In lại phiếu" onClick={() => setPreview(r.m)} className="text-gray-400 hover:text-white p-1"><Printer size={14} /></button>
                         {isAdmin && <button title="Xoá phiếu (Admin)" onClick={() => removeMove(r.m)} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14} /></button>}
                       </td>
                     </tr>
-                  )) : <tr><td colSpan={COLS[t].length + 2} className="px-3 py-5 text-center text-gray-500 text-sm">{all.length ? 'Không có phiếu nào khớp bộ lọc' : 'Chưa có dòng nào'}</td></tr>}
+                  )) : <tr><td colSpan={COLS[t].length + (showSign ? 4 : 3)} className="px-3 py-5 text-center text-gray-500 text-sm">{all.length ? 'Không có phiếu nào khớp bộ lọc' : 'Chưa có dòng nào'}</td></tr>}
                 </tbody>
               </table>
             </div></div>}
@@ -566,12 +574,13 @@ export default function DeviceDetailPage() {
       )}
 
       {preview && <PrintPreview move={preview} onClose={() => setPreview(null)} />}
+      {lb && <PhotoLightbox lb={lb} onClose={() => setLb(null)} />}
       {phieu && (
         <PhieuModal type={phieu.type} presetDeviceId={device.id} presetPerson={phieu.person} onClose={() => setPhieu(null)}
           onSaved={(m, x) => {
             setPhieu(null); load()
             if (x?.repairCreated) fetch('/api/tasks').then((r) => r.json()).then((j) => setDevTasks(((j.data || []) as Task[]).filter((t) => t.deviceId === id))).catch(() => {})
-            setMsg({ ok: true, text: `Đã lưu phiếu ${m.so}${x?.repairCreated ? ` · đã tạo ${x.repairCreated} Công việc Sửa chữa` : ''}` }); setTimeout(() => setMsg(null), 3500)
+            setMsg({ ok: true, text: `Đã lưu phiếu ${m.so}${x?.repairCreated ? ` · đã tạo ${x.repairCreated} Công việc Sửa chữa` : ''}${x?.signPending ? ' · Chờ ký — in ra ký xong tải ảnh phiếu lên' : ''}` }); setTimeout(() => setMsg(null), 3500)
           }} />
       )}
 

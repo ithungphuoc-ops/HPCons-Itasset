@@ -336,7 +336,7 @@ export default function EmployeeDetailPage() {
         <PhieuModal type={phieu.type} presetDeviceId={phieu.deviceId} presetPerson={employee.full_name} onClose={() => setPhieu(null)}
           onSaved={(m, x) => {
             setPhieu(null); setReload((n) => n + 1)
-            setFlash(`Đã lưu phiếu ${m.so}${x?.repairCreated ? ` · đã tạo ${x.repairCreated} Công việc Sửa chữa` : ''}`); setTimeout(() => setFlash(''), 3000)
+            setFlash(`Đã lưu phiếu ${m.so}${x?.repairCreated ? ` · đã tạo ${x.repairCreated} Công việc Sửa chữa` : ''}${x?.signPending ? ' · Chờ ký — in ra ký xong tải ảnh phiếu lên' : ''}`); setTimeout(() => setFlash(''), 3000)
           }} />
       )}
       {flash && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-800 border border-gray-600 px-4 py-2.5 rounded-xl text-sm shadow-xl">{flash}</div>}

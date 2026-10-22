@@ -3,7 +3,7 @@ import { listAllDevices, specsOf } from '@/lib/firestore/devices'
 import { missingSpecs } from '@/lib/kho/settings'
 import { listActiveEmployees } from '@/lib/firestore/employees'
 import { listAllTasks } from '@/lib/firestore/tasks'
-import { listRecentMoves, deviceStock } from '@/lib/firestore/moves'
+import { listPendingSign, listRecentMoves, deviceStock } from '@/lib/firestore/moves'
 import { requireSession } from '@/lib/session'
 import { stockLeft } from '@/lib/kho/config'
 import { getKhoSettings } from '@/lib/firestore/settings'
@@ -18,12 +18,13 @@ export async function GET() {
   }
 
   try {
-    const [devices, employees, tasks, recent, settings] = await Promise.all([
+    const [devices, employees, tasks, recent, settings, pending] = await Promise.all([
       listAllDevices(),
       listActiveEmployees(),
       listAllTasks(),
       listRecentMoves(8),
       getKhoSettings(),
+      listPendingSign(),
     ])
     const stats = {
       total: devices.length,
@@ -36,6 +37,8 @@ export async function GET() {
       tasks_total: tasks.length,
       units_left: devices.reduce((s, d) => s + Math.max(0, stockLeft(deviceStock(d))), 0),
       by_category: Object.fromEntries(settings.categories.map((c) => [c.key, devices.filter((d) => d.category === c.key).length])),
+      // Phiếu phải in ký mà chưa tải ảnh phiếu đã ký (22/10/2026)
+      pending_sign: pending.filter((m) => settings.photo.sign[m.type]).length,
       // Thiết bị chưa đủ thông số bắt buộc (dữ liệu cũ) — 10/10/2026
       missing_specs: devices.filter((d) => d.status !== 'liquidated' && missingSpecs(settings, d.category, specsOf(d)).length).length,
     }

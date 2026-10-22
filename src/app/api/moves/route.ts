@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createMove, listMovesForDevice, listRecentMoves, personHoldings, MoveError, type CreateMoveInput } from '@/lib/firestore/moves'
+import { createMove, listMovesForDevice, listPendingSign, listRecentMoves, personHoldings, MoveError, type CreateMoveInput } from '@/lib/firestore/moves'
+import { getKhoSettings } from '@/lib/firestore/settings'
 import { createTask } from '@/lib/firestore/tasks'
 import { requireSession, requireWriteAccess } from '@/lib/session'
 
 // GET /api/moves?deviceId=… → lịch sử phiếu của 1 thiết bị; ?recent=10 → phiếu mới nhất;
-// ?holder=Tên → thiết bị người đó đang giữ (phiếu Thu hồi / Luân chuyển gợi ý sẵn — 10/10/2026)
+// ?holder=Tên → thiết bị người đó đang giữ (phiếu Thu hồi / Luân chuyển gợi ý sẵn — 10/10/2026);
+// ?pending=1 → phiếu "Chờ ký" (phải in ký, chưa tải ảnh phiếu đã ký — 22/10/2026)
 export async function GET(req: NextRequest) {
   try {
     await requireSession()
@@ -16,6 +18,11 @@ export async function GET(req: NextRequest) {
     const holder = (req.nextUrl.searchParams.get('holder') || '').trim().slice(0, 120)
     const recent = Number(req.nextUrl.searchParams.get('recent') || 0)
     if (deviceId) return NextResponse.json({ data: await listMovesForDevice(deviceId) })
+    if (req.nextUrl.searchParams.get('pending')) {
+      // Admin tắt "phải ký" cho 1 loại phiếu thì phiếu loại đó không còn bị nhắc
+      const sign = (await getKhoSettings()).photo.sign
+      return NextResponse.json({ data: (await listPendingSign()).filter((m) => sign[m.type]) })
+    }
     if (holder) {
       const { holdings } = await personHoldings(holder)
       return NextResponse.json({ data: holdings.map((h) => ({ deviceId: h.device.id, assetCode: h.device.assetCode, qty: h.qty })) })
@@ -48,6 +55,7 @@ export async function POST(req: NextRequest) {
         info: body.info || {},
         dnSo: body.dnSo ?? null,
         dnDate: body.dnDate || null,
+        photos: body.photos,
         lines: body.lines.map((l) => (l && typeof l === 'object'
           ? {
               deviceId: String(l.deviceId || ''),

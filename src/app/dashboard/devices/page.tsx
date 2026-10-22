@@ -4,7 +4,7 @@
 // 4 nút lập phiếu ở đầu trang (1 phiếu nhiều thiết bị) + "Thêm thiết bị" (thêm mã vào danh mục).
 // Đợt 2: tên Loại / tên cột / bật-tắt cột / trường bổ sung theo "Sửa giao diện".
 import { useState, useEffect, useMemo } from 'react'
-import { Search, Plus, QrCode, FileSpreadsheet, Package, X, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, Columns3, ChevronDown, TriangleAlert, Lock } from 'lucide-react'
+import { Search, Plus, QrCode, FileSpreadsheet, Package, X, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, Columns3, ChevronDown, TriangleAlert, Lock, PenLine } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { DeviceStatus, DeviceCategory } from '@/lib/types'
@@ -13,6 +13,7 @@ import { STATUS_COLOR, STATUS_LABEL, STATUS_ORDER, fmtDate, normalizeVi, type Mo
 import { catLabel, missingSpecs, specFieldsOf, type KhoSettings, type ListCol } from '@/lib/kho/settings'
 import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 import PhieuModal from '@/components/kho/PhieuModal'
+import { PendingSignModal } from '@/components/kho/Photos'
 
 interface Device {
   id: string; asset_code: string; category: DeviceCategory; brand: string; model: string
@@ -94,6 +95,9 @@ export default function DevicesPage() {
   const [filterCategory, setFilterCategory] = useState<DeviceCategory | ''>('')
   const [filterStatus, setFilterStatus] = useState<DeviceStatus | ''>('')
   const [onlyMissing, setOnlyMissing] = useState(false) // thiết bị thiếu thông số bắt buộc (10/10/2026)
+  // Phiếu phải in ký mà chưa tải ảnh phiếu đã ký (22/10/2026)
+  const [pendingN, setPendingN] = useState(0)
+  const [signOpen, setSignOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [exporting, setExporting] = useState(false)
   const [modal, setModal] = useState<MoveType | null>(null)
@@ -116,9 +120,16 @@ export default function DevicesPage() {
         if (st && STATUS_ORDER.includes(st)) setFilterStatus(st)
         if (cat) setFilterCategory(cat)
         if (p.get('missing') === '1') setOnlyMissing(true)
+        if (p.get('pending') === '1') setSignOpen(true)
         try { const raw = localStorage.getItem(HIDDEN_KEY); if (raw) setHidden(new Set(JSON.parse(raw) as string[])) } catch { /* bỏ qua */ }
       }
     })
+    return () => { alive = false }
+  }, [reload])
+  // Số phiếu chờ ký — đếm lại mỗi lần tải lại danh sách (sau khi lưu phiếu / đóng danh sách chờ ký)
+  useEffect(() => {
+    let alive = true
+    fetch('/api/moves?pending=1').then((r) => r.json()).then((j) => { if (alive) setPendingN((j.data || []).length) }).catch(() => {})
     return () => { alive = false }
   }, [reload])
 
@@ -176,6 +187,10 @@ export default function DevicesPage() {
               <Icon size={15} className="text-blue-400" /> + {label}
             </button>
           ))}
+          <button onClick={() => setSignOpen(true)} title="Phiếu đã in, chưa tải ảnh phiếu có chữ ký"
+            className={`flex items-center gap-2 border px-4 py-2 rounded-lg text-sm ${pendingN ? 'bg-amber-500/10 border-amber-500/50 text-amber-300' : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500'}`}>
+            <PenLine size={15} /> Phiếu chờ ký · {pendingN}
+          </button>
         </div>
       )}
 
@@ -266,7 +281,8 @@ export default function DevicesPage() {
         </table>
       </div>
 
-      {modal && <PhieuModal type={modal} onClose={() => setModal(null)} onSaved={(m, x) => { setModal(null); flash(`Đã lưu phiếu ${m.so}${x?.repairCreated ? ` · đã tạo ${x.repairCreated} Công việc Sửa chữa` : ''}`); fetchDevices() }} />}
+      {signOpen && <PendingSignModal canWrite={canWrite} onClose={() => { setSignOpen(false); fetchDevices() }} onChanged={setPendingN} />}
+      {modal && <PhieuModal type={modal} onClose={() => setModal(null)} onSaved={(m, x) => { setModal(null); flash(`Đã lưu phiếu ${m.so}${x?.repairCreated ? ` · đã tạo ${x.repairCreated} Công việc Sửa chữa` : ''}${x?.signPending ? ' · Chờ ký — in ra ký xong tải ảnh phiếu lên' : ''}`); fetchDevices() }} />}
       {adding && <AddDeviceModal S={S} onClose={() => setAdding(false)} onSaved={(id) => { setAdding(false); router.push(`/dashboard/devices/${id}`) }} />}
       {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-800 border border-gray-600 px-4 py-2.5 rounded-xl text-sm shadow-xl">{toast}</div>}
     </div>

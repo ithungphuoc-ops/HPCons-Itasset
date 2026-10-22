@@ -21,6 +21,11 @@ import { deviceNameS, missingSpecs, specFieldsOf, type KhoSettings } from '@/lib
 import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 import type { DeviceCategory } from '@/lib/types'
 import { PrintPreview, type PrintableMove } from '@/components/kho/PhieuPrint'
+import { PhotoPicker, SignNote } from '@/components/kho/Photos'
+import type { MovePhoto } from '@/lib/kho/photos'
+
+// Gợi ý chụp gì cho từng loại phiếu (ảnh thiết bị — 22/10/2026)
+const PHOTO_HINT: Record<MoveType, string> = { NK: 'ảnh phiếu giao hàng / hoá đơn, máy lúc nhận', XK: 'máy lúc giao, tem seri', TH: 'tình trạng máy lúc nhận lại (vết hư, trầy)', LC: 'máy lúc bàn giao giữa 2 người' }
 
 export interface CatalogDevice {
   id: string; asset_code: string; category: DeviceCategory; brand: string; model: string
@@ -63,7 +68,7 @@ export default function PhieuModal({ type, presetDeviceId, presetPerson, onClose
   presetDeviceId?: string
   presetPerson?: string // Thu hồi / Luân chuyển: người đang giữ · Cấp phát: người nhận
   onClose: () => void
-  onSaved: (move: { id: string; so: string | null }, extra?: { repairCreated?: number }) => void
+  onSaved: (move: { id: string; so: string | null }, extra?: { repairCreated?: number; signPending?: boolean }) => void
 }) {
   const def = MOVE_DEFS[type]
   // Tình trạng, tên Loại, ô "Theo đề nghị" theo "Sửa giao diện"
@@ -83,6 +88,9 @@ export default function PhieuModal({ type, presetDeviceId, presetPerson, onClose
   const [sugFor, setSugFor] = useState<number | null>(null)
   const [sugIdx, setSugIdx] = useState(0)
   const [saving, setSaving] = useState(false)
+  // Ảnh thiết bị (đã tải lên R2 khi chọn) + cờ đang tải để chặn Lưu giữa chừng
+  const [photos, setPhotos] = useState<MovePhoto[]>([])
+  const [photoBusy, setPhotoBusy] = useState(false)
   const [preview, setPreview] = useState<{ move: PrintableMove; draft: boolean; afterClose?: () => void } | null>(null)
   const [holdings, setHoldings] = useState<{ name: string; list: { deviceId: string; assetCode: string; qty: number }[] } | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
@@ -179,6 +187,8 @@ export default function PhieuModal({ type, presetDeviceId, presetPerson, onClose
     const e: Record<string, boolean> = {}
     const msgs: string[] = []
     if (!date) { e.date = true; msgs.push('Chưa chọn ngày') }
+    if (photoBusy) msgs.push('Ảnh đang tải lên — đợi xong rồi lưu')
+    if (settings.photo.require[type] && !photos.length) msgs.push(`Phiếu ${def.label} bắt buộc có ít nhất 1 ảnh thiết bị`)
     def.fields.forEach((f) => {
       const v = String(info[f.key] || '').trim()
       if (f.required && !v) { e[f.key] = true; msgs.push('Chưa nhập ' + f.label.toLowerCase()) }
@@ -249,7 +259,7 @@ export default function PhieuModal({ type, presetDeviceId, presetPerson, onClose
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type, date, info, dnSo: dnSo.trim() || null, dnDate: dnDate || null,
+          type, date, info, dnSo: dnSo.trim() || null, dnDate: dnDate || null, photos,
           lines: lines.map((l) => {
             const d = findCode(l.code)
             const base = { qty: Number(l.qty), condition: l.condition, note: l.note.trim() || null }
@@ -261,7 +271,7 @@ export default function PhieuModal({ type, presetDeviceId, presetPerson, onClose
       })
       const json = await res.json()
       if (!res.ok) { setAlert({ icon: '⚠', title: 'Chưa lưu được phiếu', body: json.error || 'Lỗi không xác định' }); return }
-      const extra = { repairCreated: json.repairCreated || 0 }
+      const extra = { repairCreated: json.repairCreated || 0, signPending: !!json.data.signPending }
       if (thenPrint) setPreview({ move: toPrintable(json.data.so), draft: false, afterClose: () => onSaved(json.data, extra) })
       else onSaved(json.data, extra)
     } finally {
@@ -532,6 +542,8 @@ export default function PhieuModal({ type, presetDeviceId, presetPerson, onClose
               </table>
             </div>
             <button onClick={() => setLines([...lines, newLine(type)])} className="mt-2 flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300"><Plus size={14} /> Thêm thiết bị</button>
+            {settings.photo.sign[type] && <div className="mt-5"><SignNote /></div>}
+            <div className="mt-3"><PhotoPicker value={photos} onChange={setPhotos} max={settings.photo.max} required={settings.photo.require[type]} hint={PHOTO_HINT[type]} onBusy={setPhotoBusy} /></div>
           </div>
         </div>
 
