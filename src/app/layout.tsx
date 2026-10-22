@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Kho Tổng — HP Cons",
+  title: "IT HPCons", // tên tab trình duyệt — khớp tên ô app trên HPcore (Sếp yêu cầu 22/10/2026)
   description: "Kho Tổng: Kho IT, Kho VPP, Kho Thi công, Kho Chơn Thành",
   icons: { icon: "/logo.png" },
 };
