@@ -155,13 +155,23 @@ export default function GiaoDienPage() {
                 </div>
               ))}
             </div>
-            <button type="button" onClick={() => { set({ categories: [...D.categories, { key: newKey('c_'), label: 'Loại mới', specs: [] }] }); setCatIdx(D.categories.length) }}
+            <button type="button" onClick={() => { set({ categories: [...D.categories, { key: newKey('c_'), label: 'Loại mới', brandRequired: true, modelRequired: true, specs: [] }] }); setCatIdx(D.categories.length) }}
               className="mt-3 flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300"><Plus size={14} /> Thêm Loại</button>
           </section>
 
           <section className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <label className="block text-xs text-gray-400 mb-1">Tên Loại</label>
-            <input className={input + ' mb-4 max-w-sm'} value={cat.label} onChange={(e) => set({ categories: upd(D.categories, ci, { label: e.target.value }) })} />
+            <input className={input + ' mb-3 max-w-sm'} value={cat.label} onChange={(e) => set({ categories: upd(D.categories, ci, { label: e.target.value }) })} />
+            {/* 23/10/2026: Hãng / Model bắt buộc theo từng Loại (PC tự ráp thường không có) */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mb-4 text-xs text-gray-300">
+              <span className="text-gray-500">Khi khai thiết bị mới ở phiếu Nhập kho:</span>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" className="accent-blue-500" checked={cat.brandRequired} onChange={(e) => set({ categories: upd(D.categories, ci, { brandRequired: e.target.checked }) })} /> {D.fieldLabels.brand} bắt buộc
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" className="accent-blue-500" checked={cat.modelRequired} onChange={(e) => set({ categories: upd(D.categories, ci, { modelRequired: e.target.checked }) })} /> {D.fieldLabels.model} bắt buộc
+              </label>
+            </div>
             <h2 className="font-semibold mb-1">Trường Thông số kĩ thuật của &quot;{cat.label}&quot;</h2>
             <p className="text-xs text-gray-500 mb-3">Đổi tên trường không mất dữ liệu đã nhập. Xoá trường thì giá trị cũ vẫn giữ trong thiết bị và hiện là &quot;trường cũ&quot;. Tick <b className="text-gray-300">Bắt buộc</b> = phiếu Nhập kho phải điền ô này mới lưu được; thiết bị thiếu ô bắt buộc hiện nhãn &quot;Thiếu thông số&quot;.</p>
             <div className="space-y-1.5">

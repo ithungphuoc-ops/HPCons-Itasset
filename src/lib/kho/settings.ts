@@ -2,14 +2,16 @@
 // Firestore `settings/kho_it`; thiếu mục nào thì lấy MẶC ĐỊNH (= thiết kế Sếp chốt ở Đợt 1).
 // Dùng chung client + server. Phần tính tồn kho / lịch sử phiếu KHÔNG cấu hình được (giữ cố định
 // cho số liệu luôn đúng).
-import { CATEGORY_LABEL, CATEGORY_ORDER, MOVE_DEFS, MOVE_ORDER, PRINT_DEFAULTS, SPEC_FIELDS, SPEC_REQUIRED, TINH_TRANG, type MoveType } from '@/lib/kho/config'
+import { BRAND_MODEL_OPTIONAL, CATEGORY_LABEL, CATEGORY_ORDER, MOVE_DEFS, MOVE_ORDER, PRINT_DEFAULTS, SPEC_FIELDS, SPEC_REQUIRED, TINH_TRANG, type MoveType } from '@/lib/kho/config'
 
 // Trường thông số: `key` cố định (là chỗ lưu giá trị trong device.specs), `label` đổi tên tự do —
 // đổi tên không làm mất giá trị đã nhập. Trường mặc định có key = tên ban đầu.
 // `required` (10/10/2026): bắt buộc khi Nhập kho — thiết bị thiếu ô này bị gắn nhãn "Thiếu thông số".
 export interface SpecField { key: string; label: string; required: boolean }
 const defaultRequired = (cat: string, key: string) => !!SPEC_REQUIRED[cat as keyof typeof SPEC_REQUIRED]?.includes(key)
-export interface CategoryDef { key: string; label: string; specs: SpecField[] }
+// brandRequired / modelRequired (23/10/2026): Hãng / Model bắt buộc khi khai thiết bị mới ở phiếu Nhập kho
+export interface CategoryDef { key: string; label: string; brandRequired: boolean; modelRequired: boolean; specs: SpecField[] }
+const defaultBaseRequired = (cat: string) => !BRAND_MODEL_OPTIONAL.includes(cat)
 
 // Trường bổ sung ở Thông tin chung — giá trị lưu ở device.extra[key]
 export type ExtraType = 'text' | 'number' | 'date' | 'select'
@@ -69,7 +71,10 @@ export interface KhoSettings {
 
 export function defaultSettings(): KhoSettings {
   return {
-    categories: CATEGORY_ORDER.map((k) => ({ key: k, label: CATEGORY_LABEL[k], specs: (SPEC_FIELDS[k] || []).map((s) => ({ key: s, label: s, required: defaultRequired(k, s) })) })),
+    categories: CATEGORY_ORDER.map((k) => ({
+      key: k, label: CATEGORY_LABEL[k], brandRequired: defaultBaseRequired(k), modelRequired: defaultBaseRequired(k),
+      specs: (SPEC_FIELDS[k] || []).map((s) => ({ key: s, label: s, required: defaultRequired(k, s) })),
+    })),
     conditions: [...TINH_TRANG],
     fieldLabels: { ...BASE_FIELD_DEFAULT },
     extraFields: [],
@@ -119,7 +124,8 @@ export function normalizeSettings(raw: unknown): KhoSettings {
           seenSpec.add(s.key)
           return [{ key: s.key, label: str(s.label, 80) || s.key, required: typeof s.required === 'boolean' ? s.required : defaultRequired(c.key, s.key) }]
         })
-        return [{ key: c.key, label: str(c.label, 60) || c.key, specs }]
+        const req = (v: unknown) => (typeof v === 'boolean' ? v : defaultBaseRequired(c.key))
+        return [{ key: c.key, label: str(c.label, 60) || c.key, brandRequired: req(c.brandRequired), modelRequired: req(c.modelRequired), specs }]
       })
     : d.categories
 
@@ -202,6 +208,11 @@ export function catLabel(s: KhoSettings, key: string): string {
 }
 export function specFieldsOf(s: KhoSettings, key: string): SpecField[] {
   return s.categories.find((c) => c.key === key)?.specs || []
+}
+/** Hãng / Model có bắt buộc khi khai thiết bị mới thuộc Loại này không (chưa chọn Loại → coi như bắt buộc) */
+export function baseRequired(s: KhoSettings, key: string): { brand: boolean; model: boolean } {
+  const c = s.categories.find((x) => x.key === key)
+  return { brand: c ? c.brandRequired : true, model: c ? c.modelRequired : true }
 }
 /** Ô thông số bắt buộc còn trống của 1 thiết bị (theo Loại) — rỗng = đủ */
 export function missingSpecs(s: KhoSettings, category: string, specs: Record<string, string> | null | undefined): SpecField[] {

@@ -46,9 +46,13 @@ export const SPEC_FIELDS: Partial<Record<BuiltinCategory, string[]>> = {
 // diện (tick "Bắt buộc khi nhập kho"). Cấu hình đã lưu từ trước chưa có dấu tick → lấy theo đây.
 export const SPEC_REQUIRED: Partial<Record<BuiltinCategory, string[]>> = {
   laptop: ['CPU', 'Ram', 'Ổ cứng', 'VGA', 'Màn hình', 'Hệ điều hành'],
-  pc: ['CPU', 'Main', 'Ram', 'Ổ cứng', 'Nguồn'],
+  pc: ['CPU', 'Main', 'Ram', 'Ổ cứng'], // 23/10/2026 Sếp bỏ bắt buộc "Nguồn" với PC
   monitor: ['Kích cỡ màn hình', 'Tấm nền', 'Tần số quét', 'Độ phân giải'],
 }
+
+// Hãng / Model bắt buộc khi khai thiết bị mới ở phiếu Nhập kho — mặc định bắt buộc, TRỪ các Loại dưới
+// đây (PC tự ráp thường không có hãng / model — Sếp yêu cầu 23/10/2026). Admin đổi được ở Sửa giao diện.
+export const BRAND_MODEL_OPTIONAL: readonly string[] = ['pc']
 
 // Dữ liệu cũ (laptopSpecs/monitorSpecs thời Supabase) → tên trường mới, để hiện được ngay khi chưa
 // có `specs` mới. Chỉ dùng để ĐỌC; lần Lưu đầu tiên sẽ ghi sang `specs`.

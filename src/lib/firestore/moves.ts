@@ -5,7 +5,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { TAG_DEVICES, buildDeviceDoc, listAllDevices, specsOf } from "@/lib/firestore/devices";
 import { computeHolders } from "@/lib/kho/holders";
 import { getKhoSettings } from "@/lib/firestore/settings";
-import { deviceNameS, missingSpecs, specFieldsOf, type KhoSettings } from "@/lib/kho/settings";
+import { baseRequired, deviceNameS, missingSpecs, specFieldsOf, type KhoSettings } from "@/lib/kho/settings";
 import { MOVE_DEFS, TAX_CODE_RE, assetCodeError, normalizeVi, stockHeld, stockLeft, type StockNumbers } from "@/lib/kho/config";
 import { cleanPhotos, type MovePhoto } from "@/lib/kho/photos";
 import { deleteFiles } from "@/lib/r2";
@@ -94,8 +94,9 @@ function cleanNewDevice(raw: unknown, settings: KhoSettings, n: number): NewDevi
   const category = cut(r.category, 80);
   if (!settings.categories.some((c) => c.key === category)) throw new MoveError(`Dòng ${n}: chưa chọn Loại cho thiết bị mới ${assetCode}`);
   const brand = cut(r.brand), model = cut(r.model);
-  if (!brand) throw new MoveError(`Dòng ${n}: chưa nhập Hãng cho thiết bị mới ${assetCode}`);
-  if (!model) throw new MoveError(`Dòng ${n}: chưa nhập Model cho thiết bị mới ${assetCode}`);
+  const need = baseRequired(settings, category); // Hãng / Model bắt buộc theo Loại (PC mặc định không — 23/10/2026)
+  if (need.brand && !brand) throw new MoveError(`Dòng ${n}: chưa nhập Hãng cho thiết bị mới ${assetCode}`);
+  if (need.model && !model) throw new MoveError(`Dòng ${n}: chưa nhập Model cho thiết bị mới ${assetCode}`);
   const rawSpecs = (r.specs && typeof r.specs === "object" ? r.specs : {}) as Record<string, unknown>;
   const specs: Record<string, string> = {};
   for (const f of specFieldsOf(settings, category)) { const v = cut(rawSpecs[f.key], 300); if (v) specs[f.key] = v; }

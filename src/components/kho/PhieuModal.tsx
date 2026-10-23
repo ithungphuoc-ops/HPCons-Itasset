@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Plus, Trash2, Printer, Save, Lock, Copy, TriangleAlert } from 'lucide-react'
 import DatePicker from '@/components/DatePicker'
 import { ASSET_CODE_MAX, MOVE_DEFS, TAX_CODE_RE, normalizeVi, todayIso, type MoveType } from '@/lib/kho/config'
-import { deviceNameS, missingSpecs, specFieldsOf, type KhoSettings } from '@/lib/kho/settings'
+import { baseRequired, deviceNameS, missingSpecs, specFieldsOf, type KhoSettings } from '@/lib/kho/settings'
 import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 import type { DeviceCategory } from '@/lib/types'
 import { PrintPreview, type PrintableMove } from '@/components/kho/PhieuPrint'
@@ -206,8 +206,9 @@ export default function PhieuModal({ type, presetDeviceId, presetPerson, onClose
         if (newCodes.has(k)) { e['code' + i] = true; msgs.push(`Dòng ${i + 1}: mã ${l.code.trim()} trùng với dòng ${newCodes.get(k)}`) }
         newCodes.set(k, i + 1)
         if (!l.nd.category) { e['nd_category' + i] = true; msgs.push(`Dòng ${i + 1}: chưa chọn Loại`) }
-        if (!l.nd.brand.trim()) { e['nd_brand' + i] = true; msgs.push(`Dòng ${i + 1}: chưa nhập Hãng`) }
-        if (!l.nd.model.trim()) { e['nd_model' + i] = true; msgs.push(`Dòng ${i + 1}: chưa nhập Model`) }
+        const need = baseRequired(settings, l.nd.category) // PC mặc định không bắt buộc Hãng / Model (23/10/2026)
+        if (need.brand && !l.nd.brand.trim()) { e['nd_brand' + i] = true; msgs.push(`Dòng ${i + 1}: chưa nhập Hãng`) }
+        if (need.model && !l.nd.model.trim()) { e['nd_model' + i] = true; msgs.push(`Dòng ${i + 1}: chưa nhập Model`) }
         if (l.nd.category) {
           const miss = missingSpecs(settings, l.nd.category, l.nd.specs)
           miss.forEach((f) => (e[`spec_${f.key}${i}`] = true))
@@ -342,6 +343,7 @@ export default function PhieuModal({ type, presetDeviceId, presetPerson, onClose
       </div>
     )
     const N = l.nd
+    const need = baseRequired(settings, N.category)
     return (
       <div className="rounded-lg border border-dashed border-violet-500/70 bg-violet-500/5 p-3">
         <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -361,8 +363,8 @@ export default function PhieuModal({ type, presetDeviceId, presetPerson, onClose
               {settings.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
           </div>
-          <div><label className="block text-[11px] text-gray-400 mb-0.5">{settings.fieldLabels.brand} <b className="text-red-400">*</b></label><input className={`${small} ${bd('nd_brand' + i)}`} value={N.brand} onChange={(e) => setNd(i, { brand: e.target.value })} /></div>
-          <div><label className="block text-[11px] text-gray-400 mb-0.5">{settings.fieldLabels.model} <b className="text-red-400">*</b></label><input className={`${small} ${bd('nd_model' + i)}`} value={N.model} onChange={(e) => setNd(i, { model: e.target.value })} /></div>
+          <div><label className="block text-[11px] text-gray-400 mb-0.5">{settings.fieldLabels.brand}{need.brand && <> <b className="text-red-400">*</b></>}</label><input className={`${small} ${bd('nd_brand' + i)}`} value={N.brand} placeholder={need.brand ? undefined : 'Không bắt buộc'} onChange={(e) => setNd(i, { brand: e.target.value })} /></div>
+          <div><label className="block text-[11px] text-gray-400 mb-0.5">{settings.fieldLabels.model}{need.model && <> <b className="text-red-400">*</b></>}</label><input className={`${small} ${bd('nd_model' + i)}`} value={N.model} placeholder={need.model ? undefined : 'Không bắt buộc'} onChange={(e) => setNd(i, { model: e.target.value })} /></div>
           <div><label className="block text-[11px] text-gray-400 mb-0.5">{settings.fieldLabels.serial_number}</label><input className={`${small} border-gray-700`} value={N.serial} onChange={(e) => setNd(i, { serial: e.target.value })} /></div>
           <div><label className="block text-[11px] text-gray-400 mb-0.5">Bảo hành từ</label><DatePicker value={N.warrantyFrom} onChange={(v) => setNd(i, { warrantyFrom: v })} placeholder="Không bắt buộc" /></div>
           <div><label className="block text-[11px] text-gray-400 mb-0.5">Bảo hành đến</label><DatePicker value={N.warrantyExpiry} onChange={(v) => setNd(i, { warrantyExpiry: v })} placeholder="Không bắt buộc" /></div>
