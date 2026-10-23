@@ -68,7 +68,7 @@ const MOVE_BTNS: { t: MoveType; label: string; icon: React.ElementType }[] = [
 ]
 
 export default function DevicesPage() {
-  const { canWrite, isAdmin } = useRole()
+  const { canWrite } = useRole()
   const { settings: S } = useKhoSettings()
   // Ẩn / hiện cột theo TỪNG NGƯỜI (lưu trên máy đang dùng — Sếp yêu cầu 02/10/2026). Chỉ trong phạm vi
   // các cột Admin đã bật ở "Sửa giao diện"; Mã tài sản luôn hiện để bấm vào xem chi tiết.
@@ -103,7 +103,7 @@ export default function DevicesPage() {
   const [exporting, setExporting] = useState(false)
   const [modal, setModal] = useState<MoveType | null>(null)
   const [adding, setAdding] = useState(false)
-  const [importing, setImporting] = useState(false) // Nhập thiết bị cũ từ Excel (23/10/2026, chỉ Admin)
+  const [importing, setImporting] = useState(false) // Nhập thiết bị cũ từ Excel (23/10/2026, Admin + IT Staff)
   const [toast, setToast] = useState('')
 
   const [reload, setReload] = useState(0)
@@ -171,7 +171,7 @@ export default function DevicesPage() {
           <p className="text-gray-400 text-sm mt-1">{loading ? '...' : `${devices.length} mã trong danh mục`} · bấm 1 dòng để xem chi tiết</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {isAdmin && (
+          {canWrite && (
             <button onClick={() => setImporting(true)} disabled={loading} title="Nhập danh sách thiết bị cũ từ file Excel (có file mẫu)"
               className="flex items-center gap-2 border border-gray-700 hover:border-gray-500 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 disabled:opacity-50">
               <FileUp size={16} /> Nhập Excel

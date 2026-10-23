@@ -227,8 +227,8 @@ export default function DeviceDetailPage() {
   const lockedVal = (v: string | null | undefined, mono?: boolean) => (
     <div className={roBox}>{v ? <><Lock size={12} className="text-blue-300 shrink-0" /><span className={`truncate ${mono ? 'font-mono' : ''}`}>{v}</span></> : <span className="text-gray-500">—</span>}</div>
   )
-  // Ô khoá trong khung sửa: Admin sửa mọi ô; người khác chỉ điền ô đang trống
-  const lockedFor = (orig: string | null | undefined) => !isAdmin && !!String(orig ?? '').trim()
+  // Ô khoá trong khung sửa: Admin + IT Staff sửa mọi ô (ghi lý do — mở cho IT Staff 23/10/2026)
+  const lockedFor = (orig: string | null | undefined) => !canWrite && !!String(orig ?? '').trim()
   const firstHolder = holders[0]?.name
 
   const rowsOf = (t: MoveType): Row[] => moves.filter((m) => m.type === t).map((m) => {
@@ -270,7 +270,7 @@ export default function DeviceDetailPage() {
         </div>
       )}
 
-      {!device.stock_migrated && isAdmin && (
+      {!device.stock_migrated && canWrite && (
         <div className="mb-4 text-sm bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-xl px-4 py-3">
           Thiết bị này chưa chuyển số liệu cũ sang Kho Tổng — đang tạm lấy số lượng cũ ({s.in}) làm Nhập kho. Sẽ đúng hẳn sau khi chạy chuyển dữ liệu.
         </div>
@@ -335,13 +335,13 @@ export default function DeviceDetailPage() {
           count={`${specFields.filter((x) => f.specs[x.key]).length}/${specFields.length} trường có dữ liệu`} />
         {open.specs && <div className="px-5 pb-5">
           {ed ? (
-            /* ----- Khung sửa: Admin sửa mọi ô (ghi lý do), người khác chỉ điền ô trống ----- */
+            /* ----- Khung sửa: Admin + IT Staff sửa mọi ô (sửa ô đã có giá trị phải ghi lý do) ----- */
             <div>
-              <div className="text-xs text-gray-400 mb-2">{isAdmin ? 'Admin: sửa được mọi ô — sửa ô đã có giá trị phải ghi lý do.' : 'Chỉ điền được ô đang trống — ô đã có giá trị chỉ Admin sửa.'}</div>
+              <div className="text-xs text-gray-400 mb-2">Sửa được mọi ô — sửa ô đã có giá trị phải ghi lý do; ô đang trống điền thẳng.</div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
-                <Fld label={L.asset_code}><input className={input + ' font-mono'} disabled={!isAdmin} maxLength={60} value={ed.asset_code} onChange={(e) => setEd({ ...ed, asset_code: e.target.value })} /></Fld>
+                <Fld label={L.asset_code}><input className={input + ' font-mono'} disabled={!canWrite} maxLength={60} value={ed.asset_code} onChange={(e) => setEd({ ...ed, asset_code: e.target.value })} /></Fld>
                 <Fld label={L.category}>
-                  <select className={input} disabled={!isAdmin} value={ed.category} onChange={(e) => setEd({ ...ed, category: e.target.value as DeviceCategory })}>
+                  <select className={input} disabled={!canWrite} value={ed.category} onChange={(e) => setEd({ ...ed, category: e.target.value as DeviceCategory })}>
                     {!S.categories.some((c) => c.key === ed.category) && <option value={ed.category}>{catLabel(S, ed.category)}</option>}
                     {S.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
                   </select>
@@ -364,7 +364,7 @@ export default function DeviceDetailPage() {
                   </div>
                 ) : <p className="text-sm text-gray-500">{L.category} &quot;{catLabel(S, ed.category)}&quot; chưa có trường thông số.</p>
               })()}
-              {isAdmin && (
+              {canWrite && (
                 <div className="mt-4 max-w-xl">
                   <div className="text-xs text-gray-400 mb-1">Lý do sửa <b className="text-red-400">*</b> <span className="text-gray-500">(không cần nếu chỉ điền ô đang trống)</span></div>
                   <input className={input} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="VD: nâng cấp Ram 16GB lên 32GB" />
@@ -400,11 +400,8 @@ export default function DeviceDetailPage() {
               <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-gray-800">
                 <span className="text-xs text-gray-500 flex items-center gap-1"><Lock size={11} /> Thông số nhà sản xuất — đã có giá trị là khoá, không ai sửa nhầm được.</span>
                 <span className="flex-1" />
-                {canWrite && !isAdmin && !miss.length && specFields.some((x) => !device.specs?.[x.key]) && (
-                  <button onClick={openEd} className="flex items-center gap-1.5 border border-gray-700 hover:border-blue-500 px-3 py-1.5 rounded-lg text-sm text-gray-300"><Pencil size={13} /> Bổ sung ô trống</button>
-                )}
-                {isAdmin && (
-                  <button onClick={openEd} className="flex items-center gap-1.5 border border-gray-700 hover:border-amber-500 hover:text-amber-300 px-3 py-1.5 rounded-lg text-sm text-gray-300"><Pencil size={13} /> Sửa thông số (chỉ Admin)</button>
+                {canWrite && (
+                  <button onClick={openEd} className="flex items-center gap-1.5 border border-gray-700 hover:border-amber-500 hover:text-amber-300 px-3 py-1.5 rounded-lg text-sm text-gray-300"><Pencil size={13} /> Sửa thông số</button>
                 )}
               </div>
               {device.spec_log?.length > 0 && (
@@ -483,7 +480,7 @@ export default function DeviceDetailPage() {
                       {showSign && <td className="px-3 py-2"><SignStatus move={r.m} canWrite={canWrite} onView={setLb} onSigned={(nm) => setMoves((ms) => ms.map((x) => (x.id === nm.id ? nm : x)))} /></td>}
                       <td className="px-3 py-2 whitespace-nowrap text-right">
                         <button title="In lại phiếu" onClick={() => setPreview(r.m)} className="text-gray-400 hover:text-white p-1"><Printer size={14} /></button>
-                        {isAdmin && <button title="Xoá phiếu (Admin)" onClick={() => removeMove(r.m)} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14} /></button>}
+                        {canWrite && <button title="Xoá phiếu" onClick={() => removeMove(r.m)} className="text-gray-500 hover:text-red-400 p-1"><Trash2 size={14} /></button>}
                       </td>
                     </tr>
                   )) : <tr><td colSpan={COLS[t].length + (showSign ? 4 : 3)} className="px-3 py-5 text-center text-gray-500 text-sm">{all.length ? 'Không có phiếu nào khớp bộ lọc' : 'Chưa có dòng nào'}</td></tr>}

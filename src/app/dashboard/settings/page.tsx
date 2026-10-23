@@ -2,16 +2,29 @@
 import { useState, useEffect } from 'react'
 import { Shield, Plus, Trash2, Users, Check, ExternalLink } from 'lucide-react'
 import { reportActivity } from '@/lib/reportActivity'
+import { useRole } from '@/lib/hooks/useRole'
 
 type Tab = 'account' | 'users'
 type Role = 'admin' | 'it_staff' | 'viewer'
-interface AppUser { email: string; role: Role; name: string }
+type Hpcore = 'owner' | 'granted' | 'none' | 'error' | 'no_account'
+interface AppUser { email: string; role: Role; name: string; hpcore?: Hpcore }
 
 const ROLE_LABEL: Record<Role, string> = { admin: 'Admin', it_staff: 'IT Staff', viewer: 'Chỉ xem' }
 const ROLE_OPTS: Role[] = ['viewer', 'it_staff', 'admin']
+// Tầng 1 (HPcore cấp dùng app IT) của từng người — 23/10/2026
+const HPCORE_BADGE: Record<Hpcore, [string, string]> = {
+  owner: ['HPcore: chủ sở hữu', 'bg-green-500/15 text-green-400'],
+  granted: ['HPcore: đã cấp', 'bg-green-500/15 text-green-400'],
+  none: ['HPcore: chưa cấp — chưa vào được app', 'bg-amber-500/15 text-amber-300'],
+  no_account: ['Chưa có tài khoản HPcore', 'bg-amber-500/15 text-amber-300'],
+  error: ['HPcore: không kiểm được', 'bg-gray-700 text-gray-400'],
+}
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>('account')
+  const { role, isAdmin } = useRole()
+  // 23/10/2026: Cài đặt chỉ Admin (IT Staff được mọi chức năng khác)
+  if (role && !isAdmin) return <div className="p-8 text-gray-400">Chỉ Admin mới vào được trang Cài đặt.</div>
   return (
     <div className="p-8 max-w-3xl">
       <div className="mb-6">
@@ -129,9 +142,10 @@ function UsersTab() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl px-4 py-3 text-xs text-blue-300/80">
-        Đăng nhập dùng chung với app tổng. Ở đây chỉ cấp <b>vai trò dashboard</b> (Chỉ xem / IT Staff / Admin) — chọn người trong danh sách Nhân viên lấy từ HPcore.
-        Email chưa được cấp = nhân viên thường (chỉ xem thiết bị của mình ở /my-devices).
+      <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl px-4 py-3 text-xs text-blue-300/80 space-y-1">
+        <div>Phân quyền <b>2 bước</b>: <b>(1)</b> HPcore → Quản lý ứng dụng → IT HPCons cấp quyền <b>vào app</b> (vai trò chọn bên HPcore không quan trọng) ·{' '}
+          <b>(2)</b> ở đây chọn <b>vai trò trong app IT</b> — quyết định làm được gì.</div>
+        <div><b>Admin</b>: toàn quyền · <b>IT Staff</b>: mọi chức năng trừ Cài đặt và Sửa giao diện · <b>Chỉ xem</b>: chỉ xem. Email chưa có ở đây = nhân viên thường (chỉ xem thiết bị của mình ở /my-devices).</div>
       </div>
 
       {/* Cấp quyền */}
@@ -199,6 +213,7 @@ function UsersTab() {
                   <td className="px-4 py-3">
                     <div className="font-medium text-white">{u.name || u.email}</div>
                     {u.name && <div className="text-xs text-gray-400">{u.email}</div>}
+                    {u.hpcore && <span className={`inline-block mt-1 text-[11px] px-2 py-0.5 rounded-full ${HPCORE_BADGE[u.hpcore][1]}`}>{HPCORE_BADGE[u.hpcore][0]}</span>}
                   </td>
                   <td className="px-4 py-3">
                     <select value={u.role} onChange={e => changeRole(u.email, e.target.value as Role)}

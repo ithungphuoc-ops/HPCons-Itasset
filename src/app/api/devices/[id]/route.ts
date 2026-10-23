@@ -10,7 +10,7 @@ import {
 } from '@/lib/firestore/devices'
 import { countMovesForDevice, listMovesForDevice } from '@/lib/firestore/moves'
 import { getActiveAssignmentForDevice } from '@/lib/firestore/assignments'
-import { isAdmin, requireSession, requireWriteAccess } from '@/lib/session'
+import { requireSession, requireWriteAccess } from '@/lib/session'
 import { STATUS_ORDER, assetCodeError, normalizeVi } from '@/lib/kho/config'
 import { getKhoSettings } from '@/lib/firestore/settings'
 import { catLabel, missingSpecs, specFieldsOf } from '@/lib/kho/settings'
@@ -38,9 +38,9 @@ const date = (v: unknown) => {
 
 // Sửa "Thông tin chung" + Thông số kĩ thuật (bấm Lưu ở trang chi tiết). KHÔNG sửa được số tồn
 // ở đây — số tồn chỉ đổi qua phiếu (lib/firestore/moves.ts).
-// 10/10/2026 — thông số khoá: Mã · Loại · Hãng · Model · Seri + ô thông số ĐÃ CÓ giá trị chỉ Admin
-// sửa được và phải ghi lý do (body.reason); ô đang trống ai có quyền ghi cũng điền được. Mọi thay
-// đổi các ô này ghi vào specsLog. Bảo hành, trạng thái, trường bổ sung vẫn sửa như cũ.
+// 10/10/2026 — thông số khoá: Mã · Loại · Hãng · Model · Seri + ô thông số ĐÃ CÓ giá trị sửa được nhưng
+// phải ghi lý do (body.reason) — 23/10/2026 mở cho cả IT Staff (trước chỉ Admin); ô đang trống điền thẳng.
+// Mọi thay đổi các ô này ghi vào specsLog. Bảo hành, trạng thái, trường bổ sung vẫn sửa như cũ.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let session
   try {
@@ -124,9 +124,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       for (const [k, v] of Object.entries(update.specs)) track(labelOf(k), curSpecs[k], v)
     }
     const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 300) : ''
-    if (edits.length && !isAdmin(session)) {
-      return NextResponse.json({ error: `Thông số đã khoá — chỉ Admin sửa được (${edits.map((c) => c.field).join(', ')}). Ô còn trống thì điền được.` }, { status: 403 })
-    }
+    // 23/10/2026: Admin + IT Staff đều sửa được ô đã khoá (vẫn bắt ghi lý do); Chỉ xem đã bị chặn ở requireWriteAccess
     if (edits.length && !reason) return NextResponse.json({ error: 'Sửa thông số đã khoá phải ghi lý do' }, { status: 400 })
     const now = new Date().toISOString()
     const logs: SpecLogEntry[] = []

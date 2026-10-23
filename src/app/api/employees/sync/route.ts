@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { syncFromHpcore } from '@/lib/firestore/hpcoreSync'
-import { requireAdmin } from '@/lib/session'
+import { requireWriteAccess } from '@/lib/session'
 
-// "Đồng bộ ngay" danh sách Nhân viên từ App Tổng HPcore — chỉ Admin (Đợt 3, 01/10/2026)
+// "Đồng bộ ngay" danh sách Nhân viên từ App Tổng HPcore — Admin + IT Staff (Đợt 3, 01/10/2026; mở cho
+// IT Staff 23/10/2026)
 export async function POST() {
   let session
   try {
-    session = await requireAdmin()
+    session = await requireWriteAccess()
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 403 })
   }

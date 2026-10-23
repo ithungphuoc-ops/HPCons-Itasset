@@ -1,5 +1,5 @@
 'use client'
-// Popup "Nhập Excel" — nhập thiết bị cũ từ file Excel (chỉ Admin, Sếp duyệt demo 23/10/2026).
+// Popup "Nhập Excel" — nhập thiết bị cũ từ file Excel (Admin + IT Staff, Sếp duyệt demo 23/10/2026).
 // Trình duyệt đọc file + xem trước (lib/kho/importExcel.ts); bấm Nhập mới gửi các dòng hợp lệ lên máy chủ.
 import { useEffect, useMemo, useState } from 'react'
 import { X, FileSpreadsheet, Download, Check, Loader2 } from 'lucide-react'
@@ -243,7 +243,7 @@ export default function ImportExcelModal({ S, devices, onClose, onDone }: {
       <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-6xl shadow-2xl">
         <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-800">
           <h2 className="font-semibold text-lg">Nhập thiết bị cũ từ Excel</h2>
-          <span className="text-xs text-gray-500 ml-1 hidden sm:inline">chỉ Admin · chuyển danh sách thiết bị đang có vào app</span>
+          <span className="text-xs text-gray-500 ml-1 hidden sm:inline">chuyển danh sách thiết bị đang có vào app</span>
           <button type="button" onClick={onClose} disabled={busy} className="ml-auto text-gray-400 hover:text-white"><X size={18} /></button>
         </div>
         <div className="p-5">{body}</div>

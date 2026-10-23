@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin } from '@/lib/session'
+import { requireWriteAccess } from '@/lib/session'
 import { ImportError, importDevices } from '@/lib/firestore/importDevices'
 
-// POST /api/devices/import — nhập thiết bị cũ từ Excel (chỉ Admin, Sếp duyệt 23/10/2026).
+// POST /api/devices/import — nhập thiết bị cũ từ Excel (Admin + IT Staff, Sếp duyệt 23/10/2026).
 // Trình duyệt đọc file + xem trước, gửi lên các dòng sẽ nhập; máy chủ kiểm lại rồi ghi.
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   let session
   try {
-    session = await requireAdmin()
+    session = await requireWriteAccess()
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 403 })
   }

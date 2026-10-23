@@ -12,7 +12,7 @@ function normalizeVi(s: string) {
 interface SyncMeta { syncedAt: string; by: string | null; hpcoreUsers: number; created: number; updated: number; deactivated: number }
 
 export default function EmployeesPage() {
-  const { isAdmin } = useRole()
+  const { canWrite } = useRole() // Đồng bộ ngay: Admin + IT Staff (23/10/2026)
   const [sync, setSync] = useState<SyncMeta | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
@@ -79,7 +79,7 @@ export default function EmployeesPage() {
         </div>
         <div className="flex gap-2">
           {/* Đợt 3: Nhân viên lấy từ App Tổng HPcore — không thêm / import tay nữa */}
-          {isAdmin && (
+          {canWrite && (
             <button onClick={syncNow} disabled={syncing}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
               <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase/admin'
 import { verifyHpcore, hpcoreLoginUrl, SSO_COOKIE_NAME } from '@/lib/hpcore'
-
-const DASHBOARD_ROLES = ['admin', 'it_staff', 'viewer']
+import { hpcoreAccess } from '@/lib/appAccess'
+import { blockedByHpcore, effectiveRole } from '@/lib/accessRules'
 
 export async function proxy(request: NextRequest) {
   // Lối tắt CHỈ hoạt động khi chạy `next dev` cục bộ (NODE_ENV tự động "development" — KHÔNG
@@ -16,23 +16,27 @@ export async function proxy(request: NextRequest) {
 
   // Xác minh phiên đăng nhập CHUNG của app tổng (cookie .hpcore.vn)
   const id = await verifyHpcore(request.cookies.get(SSO_COOKIE_NAME)?.value)
+  // Phân quyền 2 tầng (23/10/2026, giống lib/session.ts::getSession): tầng 1 HPcore cấp dùng app IT
+  // (owner luôn qua, là Admin) → tầng 2 vai trò ở Cài đặt → Phân quyền của app IT (profiles/{email}).
   let role: string | null = null
+  let blocked = false // có vai trò trong app IT nhưng HPcore chưa cấp dùng app → báo rõ thay vì đẩy về /my-devices
   if (id) {
-    try {
-      const snap = await adminDb.collection('profiles').doc(id.email).get()
-      role = snap.exists ? (snap.data()?.role ?? null) : null
-    } catch {
-      role = null
-    }
+    const [local, access] = await Promise.all([
+      adminDb.collection('profiles').doc(id.email).get().then((s) => (s.exists ? (s.data()?.role ?? null) : null)).catch(() => null),
+      hpcoreAccess(id.uid),
+    ])
+    role = effectiveRole(access, local)
+    blocked = blockedByHpcore(access, local)
   }
 
   const isLoggedIn = !!id
-  const hasDashboardAccess = !!role && DASHBOARD_ROLES.includes(role)
+  const hasDashboardAccess = !!role
   const toHpcoreLogin = () => NextResponse.redirect(hpcoreLoginUrl(origin + pathname + search))
 
-  // /dashboard/* — phải đăng nhập app tổng VÀ có quyền dashboard
+  // /dashboard/* — phải đăng nhập app tổng VÀ qua đủ 2 tầng
   if (pathname.startsWith('/dashboard')) {
     if (!isLoggedIn) return toHpcoreLogin()
+    if (blocked) return NextResponse.redirect(new URL('/no-access', request.url))
     if (!hasDashboardAccess) return NextResponse.redirect(new URL('/my-devices', request.url))
   }
 
@@ -45,7 +49,7 @@ export async function proxy(request: NextRequest) {
   if (pathname === '/login') {
     if (!isLoggedIn) return toHpcoreLogin()
     const url = request.nextUrl.clone()
-    url.pathname = hasDashboardAccess ? '/dashboard' : '/my-devices'
+    url.pathname = hasDashboardAccess ? '/dashboard' : blocked ? '/no-access' : '/my-devices'
     url.search = ''
     return NextResponse.redirect(url)
   }

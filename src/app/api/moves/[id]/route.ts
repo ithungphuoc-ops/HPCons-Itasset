@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deleteMove, getMove, MoveError } from '@/lib/firestore/moves'
-import { requireAdmin, requireSession } from '@/lib/session'
+import { requireSession, requireWriteAccess } from '@/lib/session'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -14,10 +14,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ data: move })
 }
 
-// Xoá phiếu lập nhầm — chỉ Admin; số tồn được trả lại như trước khi lập phiếu
+// Xoá phiếu lập nhầm — Admin + IT Staff (23/10/2026: IT Staff được mọi thứ trừ Cài đặt / Sửa giao diện);
+// số tồn được trả lại như trước khi lập phiếu
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireAdmin()
+    await requireWriteAccess()
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 403 })
   }
