@@ -4,7 +4,7 @@
 // 4 nút lập phiếu ở đầu trang (1 phiếu nhiều thiết bị) + "Thêm thiết bị" (thêm mã vào danh mục).
 // Đợt 2: tên Loại / tên cột / bật-tắt cột / trường bổ sung theo "Sửa giao diện".
 import { useState, useEffect, useMemo } from 'react'
-import { Search, Plus, QrCode, FileSpreadsheet, Package, X, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, Columns3, ChevronDown, TriangleAlert, Lock, PenLine } from 'lucide-react'
+import { Search, Plus, QrCode, FileSpreadsheet, FileUp, Package, X, ArrowDownToLine, ArrowUpFromLine, RotateCcw, ArrowRightLeft, Columns3, ChevronDown, TriangleAlert, Lock, PenLine } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { DeviceStatus, DeviceCategory } from '@/lib/types'
@@ -14,6 +14,7 @@ import { catLabel, missingSpecs, specFieldsOf, type KhoSettings, type ListCol } 
 import { useKhoSettings } from '@/lib/kho/useKhoSettings'
 import PhieuModal from '@/components/kho/PhieuModal'
 import { PendingSignModal } from '@/components/kho/Photos'
+import ImportExcelModal from '@/components/kho/ImportExcel'
 
 interface Device {
   id: string; asset_code: string; category: DeviceCategory; brand: string; model: string
@@ -67,7 +68,7 @@ const MOVE_BTNS: { t: MoveType; label: string; icon: React.ElementType }[] = [
 ]
 
 export default function DevicesPage() {
-  const { canWrite } = useRole()
+  const { canWrite, isAdmin } = useRole()
   const { settings: S } = useKhoSettings()
   // Ẩn / hiện cột theo TỪNG NGƯỜI (lưu trên máy đang dùng — Sếp yêu cầu 02/10/2026). Chỉ trong phạm vi
   // các cột Admin đã bật ở "Sửa giao diện"; Mã tài sản luôn hiện để bấm vào xem chi tiết.
@@ -102,6 +103,7 @@ export default function DevicesPage() {
   const [exporting, setExporting] = useState(false)
   const [modal, setModal] = useState<MoveType | null>(null)
   const [adding, setAdding] = useState(false)
+  const [importing, setImporting] = useState(false) // Nhập thiết bị cũ từ Excel (23/10/2026, chỉ Admin)
   const [toast, setToast] = useState('')
 
   const [reload, setReload] = useState(0)
@@ -169,6 +171,12 @@ export default function DevicesPage() {
           <p className="text-gray-400 text-sm mt-1">{loading ? '...' : `${devices.length} mã trong danh mục`} · bấm 1 dòng để xem chi tiết</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {isAdmin && (
+            <button onClick={() => setImporting(true)} disabled={loading} title="Nhập danh sách thiết bị cũ từ file Excel (có file mẫu)"
+              className="flex items-center gap-2 border border-gray-700 hover:border-gray-500 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 disabled:opacity-50">
+              <FileUp size={16} /> Nhập Excel
+            </button>
+          )}
           <button onClick={handleExport} disabled={exporting} className="flex items-center gap-2 border border-gray-700 hover:border-gray-500 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 disabled:opacity-50">
             <FileSpreadsheet size={16} /> {exporting ? 'Đang xuất...' : 'Xuất Excel'}
           </button>
@@ -284,6 +292,7 @@ export default function DevicesPage() {
       {signOpen && <PendingSignModal canWrite={canWrite} onClose={() => { setSignOpen(false); fetchDevices() }} onChanged={setPendingN} />}
       {modal && <PhieuModal type={modal} onClose={() => setModal(null)} onSaved={(m, x) => { setModal(null); flash(`Đã lưu phiếu ${m.so}${x?.repairCreated ? ` · đã tạo ${x.repairCreated} Công việc Sửa chữa` : ''}${x?.signPending ? ' · Chờ ký — in ra ký xong tải ảnh phiếu lên' : ''}`); fetchDevices() }} />}
       {adding && <AddDeviceModal S={S} onClose={() => setAdding(false)} onSaved={(id) => { setAdding(false); router.push(`/dashboard/devices/${id}`) }} />}
+      {importing && <ImportExcelModal S={S} devices={allDevices} onClose={() => setImporting(false)} onDone={fetchDevices} />}
       {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-800 border border-gray-600 px-4 py-2.5 rounded-xl text-sm shadow-xl">{toast}</div>}
     </div>
   )

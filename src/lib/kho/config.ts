@@ -142,7 +142,8 @@ export const ASSET_CODE_MAX = 60
 export function assetCodeError(code: string): string | null {
   if (!code) return 'Chưa nhập mã tài sản'
   if (code.length > ASSET_CODE_MAX) return `Mã tài sản tối đa ${ASSET_CODE_MAX} ký tự`
-  if (code.includes('/') || /^__.*__$/.test(code)) return `Mã tài sản "${code}" không hợp lệ (không dùng dấu "/")`
+  if (code.includes('/')) return `Mã tài sản "${code}" không hợp lệ (không dùng dấu "/")`
+  if (/^__.*__$/.test(code)) return `Mã tài sản "${code}" không hợp lệ (không bắt đầu và kết thúc bằng "__")`
   return null
 }
 export function normalizeVi(s: string): string {
